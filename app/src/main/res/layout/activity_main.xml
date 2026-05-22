@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/tvLogo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="COLETOR BLOQUEADO"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#000000"
+        app:layout_constraintBottom_toTopOf="@+id/layoutSenha"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_chainStyle="packed" />
+
+    <LinearLayout
+        android:id="@+id/layoutSenha"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:visibility="visible"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvLogo">
+
+        <EditText
+            android:id="@+id/etSenha"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Digite a senha para acessar"
+            android:inputType="textPassword"
+            android:importantForAutofill="no" />
+
+        <Button
+            android:id="@+id/btnDesbloquear"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Liberar Coletor (Manutenção)"
+            android:layout_marginTop="10dp" />
+
+        <LinearLayout
+            android:id="@+id/layoutWhitelist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginTop="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Configuração de Whitelist:"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnAbrirListaApps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Adicionar Apps à Whitelist"
+                android:layout_marginTop="10dp" />
+
+            <Button
+                android:id="@+id/btnVerWhitelist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Ver / Remover Apps da Whitelist"
+                android:layout_marginTop="5dp" />
+
+            <Button
+                android:id="@+id/btnClearWhitelist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Limpar Whitelist"
+                android:backgroundTint="#FF5722"
+                android:layout_marginTop="5dp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnEncerrar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Encerrar Manutenção / Bloquear"
+            android:visibility="gone"
+            android:layout_marginTop="10dp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
