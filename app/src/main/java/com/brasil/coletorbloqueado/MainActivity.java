@@ -50,6 +50,17 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // 1. Carrega o estado salvo imediatamente
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+
+        // 2. CORREÇÃO INVISIBILIDADE: Se NÃO estiver em manutenção, minimiza o app instantaneamente
+        // Isso evita que a interface apareça durante o boot do dispositivo
+        if (!modoManutencaoAtivo) {
+            moveTaskToBack(true);
+        }
+
         setContentView(R.layout.activity_main);
 
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
@@ -62,10 +73,6 @@ public class MainActivity extends AppCompatActivity {
         btnEncerrar = findViewById(R.id.btnEncerrar);
         btnAbrirListaApps = findViewById(R.id.btnAbrirListaApps);
         btnVerWhitelist = findViewById(R.id.btnVerWhitelist);
-
-        // Carrega o estado salvo
-        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-        modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
 
         layoutSenha.setVisibility(View.VISIBLE);
         if (modoManutencaoAtivo) {
@@ -89,11 +96,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         aplicarTravasDoSistema();
-
-        // Se o app abriu "automaticamente" e não está em manutenção, minimiza para ficar em background
-        if (!modoManutencaoAtivo && isTaskRoot() && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
-            moveTaskToBack(true);
-        }
     }
 
     private void mostrarDialogoListaApps(boolean apenasWhitelist) {
@@ -120,8 +122,7 @@ public class MainActivity extends AppCompatActivity {
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_select_app, null);
         EditText etSearch = dialogView.findViewById(R.id.etSearchApp);
         ListView listView = dialogView.findViewById(R.id.lvApps);
-        Button btnClearAll = dialogView.findViewById(R.id.btnDialogClearAll
-        );
+        Button btnClearAll = dialogView.findViewById(R.id.btnDialogClearAll);
         Button btnClose = dialogView.findViewById(R.id.btnDialogClose);
 
         if (apenasWhitelist) {
@@ -131,10 +132,10 @@ public class MainActivity extends AppCompatActivity {
         final AppAdapter adapter = new AppAdapter(this, filteredApps);
         listView.setAdapter(adapter);
 
+        // Diálogo sem o botão nativo para não duplicar o "Fechar"
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(apenasWhitelist ? "Remover da Whitelist" : "Adicionar à Whitelist")
                 .setView(dialogView)
-                .setNegativeButton("Fechar", null)
                 .create();
 
         btnClearAll.setOnClickListener(v -> {
@@ -142,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
             dialog.dismiss();
         });
 
+        // Único botão de fechar no canto inferior direito
         btnClose.setOnClickListener(v -> dialog.dismiss());
 
         etSearch.addTextChangedListener(new TextWatcher() {
@@ -166,10 +168,7 @@ public class MainActivity extends AppCompatActivity {
                 allAppsData.remove(selected);
                 filteredApps.remove(selected);
                 adapter.notifyDataSetChanged();
-                if (filteredApps.isEmpty()) {
-                    Toast.makeText(MainActivity.this, "Whitelist Vazia", Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                }
+                if (filteredApps.isEmpty()) dialog.dismiss();
             } else {
                 adicionarAppWhitelist(selected.packageName);
                 dialog.dismiss();
@@ -238,13 +237,11 @@ public class MainActivity extends AppCompatActivity {
                     dpm.setStatusBarDisabled(adminComponent, true);
                     dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
                     dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
-                    dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_OUTGOING_CALLS);
                     setAppsSuspended(true);
                 } else {
                     dpm.setStatusBarDisabled(adminComponent, false);
                     dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
                     dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
-                    dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_OUTGOING_CALLS);
                     setAppsSuspended(false);
                 }
             }
@@ -264,38 +261,12 @@ public class MainActivity extends AppCompatActivity {
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
 
         for (PackageInfo pkg : packages) {
-            String pName = pkg.packageName;
-            if (pName.equals(getPackageName())) continue;
-            
-            // Se está na whitelist, garante que não está oculto nem suspenso
-            if (whitelist.contains(pName)) {
-                try {
-                    dpm.setApplicationHidden(adminComponent, pName, false);
-                    dpm.setPackagesSuspended(adminComponent, new String[]{pName}, false);
-                } catch (Exception e) {}
-                continue;
-            }
-
-            // Exceções vitais
-            if (pName.contains("android.overlay") || pName.equals("android") || 
-                pName.contains("com.android.systemui") || pName.equals("com.android.settings")) {
-                continue;
-            }
-
-            // Alvos Críticos: Play Store e Phone
-            boolean isHardTarget = pName.equals("com.android.vending") || 
-                                   pName.toLowerCase().contains("phone") || 
-                                   pName.toLowerCase().contains("dialer") ||
-                                   pName.equals("com.google.android.gms");
-
-            if (suspended) {
-                if (isHardTarget) {
-                    try { dpm.setApplicationHidden(adminComponent, pName, true); } catch (Exception e) {}
-                }
-                packagesToSuspend.add(pName);
-            } else {
-                try { dpm.setApplicationHidden(adminComponent, pName, false); } catch (Exception e) {}
-                packagesToSuspend.add(pName);
+            if (!pkg.packageName.equals(getPackageName()) && 
+                !whitelist.contains(pkg.packageName) &&
+                !pkg.packageName.contains("android.overlay") &&
+                !pkg.packageName.equals("android") &&
+                !pkg.packageName.contains("com.android.systemui")) {
+                packagesToSuspend.add(pkg.packageName);
             }
         }
 

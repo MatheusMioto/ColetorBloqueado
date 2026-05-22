@@ -41,7 +41,6 @@ public class MonitoramentoService extends Service {
                 .build();
         startForeground(1, notification);
 
-        // Verifica se o modo manutenção está ativo antes de aplicar o bloqueio
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
 
@@ -55,13 +54,9 @@ public class MonitoramentoService extends Service {
     private void aplicarBloqueioSilencioso() {
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
-                // Trava física da barra de status
                 dpm.setStatusBarDisabled(adminComponent, true);
-                // Bloqueia instalação e desinstalação
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
-                
-                // Suspende outros apps
                 setAppsSuspended(true);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -93,13 +88,17 @@ public class MonitoramentoService extends Service {
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
 
         for (PackageInfo pkg : packages) {
-            if (!pkg.packageName.equals(getPackageName()) && 
-                !whitelist.contains(pkg.packageName) &&
-                !pkg.packageName.contains("android.overlay") &&
-                !pkg.packageName.equals("android") &&
-                !pkg.packageName.contains("com.android.systemui")) {
-                packagesToSuspend.add(pkg.packageName);
+            String pName = pkg.packageName;
+            if (pName.equals(getPackageName())) continue;
+            
+            if (whitelist.contains(pName)) continue;
+
+            if (pName.contains("android.overlay") || pName.equals("android") || 
+                pName.contains("com.android.systemui") || pName.equals("com.android.settings")) {
+                continue;
             }
+
+            packagesToSuspend.add(pName);
         }
 
         if (!packagesToSuspend.isEmpty()) {
