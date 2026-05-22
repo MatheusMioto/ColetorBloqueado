@@ -282,8 +282,13 @@ public class MainActivity extends AppCompatActivity {
     public void verificarSenhaManutencao(String senhaDigitada) {
         if (senhaDigitada.equals(SENHA_MESTRE)) {
             modoManutencaoAtivo = true;
-            getSharedPreferences("Configuracoes", MODE_PRIVATE)
-                    .edit().putBoolean("modoManutencaoAtivo", true).apply();
+            SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+            Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
+            whitelist.add("com.android.vending");
+            pref.edit()
+                    .putBoolean("modoManutencaoAtivo", true)
+                    .putStringSet("whitelist", whitelist)
+                    .apply();
 
             aplicarTravasDoSistema();
 
@@ -299,8 +304,13 @@ public class MainActivity extends AppCompatActivity {
 
     public void encerrarManutencao() {
         modoManutencaoAtivo = false;
-        getSharedPreferences("Configuracoes", MODE_PRIVATE)
-                .edit().putBoolean("modoManutencaoAtivo", false).apply();
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
+        whitelist.remove("com.android.vending");
+        pref.edit()
+                .putBoolean("modoManutencaoAtivo", false)
+                .putStringSet("whitelist", whitelist)
+                .apply();
 
         btnDesbloquear.setVisibility(View.VISIBLE);
         btnEncerrar.setVisibility(View.GONE);
