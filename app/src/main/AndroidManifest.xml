@@ -53,6 +53,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Receptor para permitir que outros apps solicitem a troca de Home -->
+        <receiver
+            android:name=".HomeChangerReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.brasil.coletorbloqueado.ACAO_SOLICITAR_ALTERAR_HOME" />
+            </intent-filter>
+        </receiver>
+
         <!-- Serviço de Background -->
         <service android:name=".MonitoramentoService"
             android:enabled="true"

@@ -49,6 +49,7 @@ public class MainActivity extends AppCompatActivity {
     private ComponentName adminComponent;
     private final String SENHA_MESTRE_HASH = "aa749413036a2a5395cb4392560efb7657382e6acd06fdc1857dd7c3443a8fa3";
     private boolean modoManutencaoAtivo = false;
+    public static boolean isChangingHome = false;
 
     private LinearLayout layoutSenha, layoutWhitelist, layoutTimer;
     private EditText etSenha;
@@ -103,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
         btnGerenciarWhitelist = findViewById(R.id.btnGerenciarWhitelist);
         btnAlterarSenha = findViewById(R.id.btnAlterarSenha);
 
+
         layoutTimer = findViewById(R.id.layoutTimer);
         btnConfigurarTimer = findViewById(R.id.btnConfigurarTimer);
         tvTimerRestante = findViewById(R.id.tvTimerRestante);
@@ -131,6 +133,8 @@ public class MainActivity extends AppCompatActivity {
 
         btnGerenciarWhitelist.setOnClickListener(v -> mostrarDialogoListaApps());
         btnAlterarSenha.setOnClickListener(v -> mostrarDialogoAlterarSenha());
+
+
 
         // Inicia o serviço de background
         Intent serviceIntent = new Intent(this, MonitoramentoService.class);
@@ -167,9 +171,13 @@ public class MainActivity extends AppCompatActivity {
         List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
 
         final List<AppEntry> allAppsData = new ArrayList<>();
+        String defaultLauncher = getDefaultLauncherPackage();
         for (ApplicationInfo app : apps) {
             // Oculta a Play Store para que nao seja exibida nas listas de whitelist
             if (app.packageName.equals("com.android.vending")) continue;
+
+            // Oculta a Home do dispositivo para que o usuário não a remova/bloqueie
+            if (defaultLauncher != null && app.packageName.equals(defaultLauncher)) continue;
 
             // Filtra: mostra apenas se for app iniciável (launcher) OU se já estiver na whitelist (por segurança)
             if (!launchablePackages.contains(app.packageName) && !whitelistSet.contains(app.packageName)) {
@@ -301,6 +309,17 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    private String getDefaultLauncherPackage() {
+        PackageManager pm = getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo resolveInfo = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+        if (resolveInfo != null && resolveInfo.activityInfo != null) {
+            return resolveInfo.activityInfo.packageName;
+        }
+        return null;
+    }
+
     private void adicionarAppWhitelist(String packageName) {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
@@ -336,6 +355,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        if (pref.getBoolean("isChangingHome", false)) {
+            pref.edit().putBoolean("isChangingHome", false).apply();
+            isChangingHome = false;
+            if (!modoManutencaoAtivo) {
+                setAppsSuspended(true);
+            }
+        }
+
         aplicarTravasDoSistema();
         if (modoManutencaoAtivo) {
             configurarUITimerEIniciar();
@@ -393,15 +422,20 @@ public class MainActivity extends AppCompatActivity {
 
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
+        String defaultLauncher = getDefaultLauncherPackage();
 
         for (PackageInfo pkg : packages) {
-            if (!pkg.packageName.equals(getPackageName()) &&
-                    !whitelist.contains(pkg.packageName) &&
-                    !pkg.packageName.contains("android.overlay") &&
-                    !pkg.packageName.equals("android") &&
-                    !pkg.packageName.contains("com.android.systemui")) {
-                packagesToSuspend.add(pkg.packageName);
+            String pName = pkg.packageName;
+            if (pName.equals(getPackageName())) continue;
+            if (whitelist.contains(pName)) continue;
+            if (defaultLauncher != null && pName.equals(defaultLauncher)) continue;
+            if (pName.contains("android.overlay") || pName.equals("android") || pName.contains("com.android.systemui")) {
+                continue;
             }
+            if (pName.equals("com.android.settings") && pref.getBoolean("isChangingHome", false)) {
+                continue;
+            }
+            packagesToSuspend.add(pName);
         }
 
         if (!packagesToSuspend.isEmpty()) {

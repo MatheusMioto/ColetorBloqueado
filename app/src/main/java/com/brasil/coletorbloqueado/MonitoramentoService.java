@@ -11,6 +11,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.UserManager;
@@ -100,6 +101,7 @@ public class MonitoramentoService extends Service {
 
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
+        String defaultLauncher = getDefaultLauncherPackage();
 
         for (PackageInfo pkg : packages) {
             String pName = pkg.packageName;
@@ -107,8 +109,14 @@ public class MonitoramentoService extends Service {
             
             if (whitelist.contains(pName)) continue;
 
+            if (defaultLauncher != null && pName.equals(defaultLauncher)) continue;
+
+            if (pName.equals("com.android.settings") && pref.getBoolean("isChangingHome", false)) {
+                continue;
+            }
+
             if (pName.contains("android.overlay") || pName.equals("android") || 
-                pName.contains("com.android.systemui") || pName.equals("com.android.settings")) {
+                pName.contains("com.android.systemui")) {
                 continue;
             }
 
@@ -122,6 +130,17 @@ public class MonitoramentoService extends Service {
                 Log.e(TAG, "Erro ao alterar estado de suspensao de pacotes corporativos", e);
             }
         }
+    }
+
+    private String getDefaultLauncherPackage() {
+        PackageManager pm = getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo resolveInfo = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+        if (resolveInfo != null && resolveInfo.activityInfo != null) {
+            return resolveInfo.activityInfo.packageName;
+        }
+        return null;
     }
 
     @Override
