@@ -14,6 +14,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.UserManager;
+import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 
 public class MonitoramentoService extends Service {
+    private static final String TAG = "MonitoramentoService";
     private static final String CHANNEL_ID = "MonitoramentoServiceChannel";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
@@ -59,7 +61,7 @@ public class MonitoramentoService extends Service {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
                 setAppsSuspended(true);
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Erro ao aplicar bloqueio silencioso corporativo", e);
             }
         }
     }
@@ -72,7 +74,7 @@ public class MonitoramentoService extends Service {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
                 setAppsSuspended(false);
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Erro ao liberar bloqueio de manutencao", e);
             }
         }
     }
@@ -105,7 +107,7 @@ public class MonitoramentoService extends Service {
             try {
                 dpm.setPackagesSuspended(adminComponent, packagesToSuspend.toArray(new String[0]), suspended);
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Erro ao alterar estado de suspensao de pacotes corporativos", e);
             }
         }
     }

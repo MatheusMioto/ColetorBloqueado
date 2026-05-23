@@ -29,6 +29,8 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import android.util.Log;
+import java.security.MessageDigest;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,14 +40,16 @@ import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "MainActivity";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
-    private final String SENHA_MESTRE = "12345";
+    private final String SENHA_MESTRE_HASH = "aa749413036a2a5395cb4392560efb7657382e6acd06fdc1857dd7c3443a8fa3";
     private boolean modoManutencaoAtivo = false;
 
     private LinearLayout layoutSenha, layoutWhitelist;
     private EditText etSenha;
-    private Button btnDesbloquear, btnEncerrar, btnAbrirListaApps, btnVerWhitelist;
+    private Button btnDesbloquear, btnEncerrar, btnAbrirListaApps, btnVerWhitelist, btnAlterarSenha;
+    private TextView tvLogo;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MeuAdminReceiver.class);
 
+        tvLogo = findViewById(R.id.tvLogo);
         layoutSenha = findViewById(R.id.layoutSenha);
         layoutWhitelist = findViewById(R.id.layoutWhitelist);
         etSenha = findViewById(R.id.etSenha);
@@ -73,12 +78,20 @@ public class MainActivity extends AppCompatActivity {
         btnEncerrar = findViewById(R.id.btnEncerrar);
         btnAbrirListaApps = findViewById(R.id.btnAbrirListaApps);
         btnVerWhitelist = findViewById(R.id.btnVerWhitelist);
+        btnAlterarSenha = findViewById(R.id.btnAlterarSenha);
 
         layoutSenha.setVisibility(View.VISIBLE);
         if (modoManutencaoAtivo) {
             btnDesbloquear.setVisibility(View.GONE);
             btnEncerrar.setVisibility(View.VISIBLE);
             layoutWhitelist.setVisibility(View.VISIBLE);
+            btnAlterarSenha.setVisibility(View.GONE);
+            etSenha.setVisibility(View.GONE);
+            tvLogo.setText("Modo Manutenção");
+        } else {
+            btnAlterarSenha.setVisibility(View.VISIBLE);
+            etSenha.setVisibility(View.VISIBLE);
+            tvLogo.setText("COLETOR BLOQUEADO");
         }
 
         btnDesbloquear.setOnClickListener(v -> verificarSenhaManutencao(etSenha.getText().toString()));
@@ -86,6 +99,7 @@ public class MainActivity extends AppCompatActivity {
 
         btnAbrirListaApps.setOnClickListener(v -> mostrarDialogoListaApps(false));
         btnVerWhitelist.setOnClickListener(v -> mostrarDialogoListaApps(true));
+        btnAlterarSenha.setOnClickListener(v -> mostrarDialogoAlterarSenha());
 
         // Inicia o serviço de background
         Intent serviceIntent = new Intent(this, MonitoramentoService.class);
@@ -101,24 +115,27 @@ public class MainActivity extends AppCompatActivity {
     private void mostrarDialogoListaApps(boolean apenasWhitelist) {
         PackageManager pm = getPackageManager();
         List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-        
+
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelistSet = pref.getStringSet("whitelist", new HashSet<>());
 
         final List<AppEntry> allAppsData = new ArrayList<>();
         for (ApplicationInfo app : apps) {
+            // Oculta a Play Store para que nao seja exibida nas listas de whitelist
+            if (app.packageName.equals("com.android.vending")) continue;
+
             if (apenasWhitelist && !whitelistSet.contains(app.packageName)) continue;
-            
+
             allAppsData.add(new AppEntry(
-                app.loadLabel(pm).toString(),
-                app.packageName,
-                app.loadIcon(pm)
+                    app.loadLabel(pm).toString(),
+                    app.packageName,
+                    app.loadIcon(pm)
             ));
         }
 
         Collections.sort(allAppsData, (a, b) -> a.name.compareToIgnoreCase(b.name));
         final List<AppEntry> filteredApps = new ArrayList<>(allAppsData);
-        
+
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_select_app, null);
         EditText etSearch = dialogView.findViewById(R.id.etSearchApp);
         ListView listView = dialogView.findViewById(R.id.lvApps);
@@ -184,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
         whitelist.add(packageName);
         pref.edit().putStringSet("whitelist", whitelist).apply();
         Toast.makeText(this, "App permitido!", Toast.LENGTH_SHORT).show();
-        
+
         if (!modoManutencaoAtivo) {
             setAppsSuspended(true);
         }
@@ -196,7 +213,7 @@ public class MainActivity extends AppCompatActivity {
         whitelist.remove(packageName);
         pref.edit().putStringSet("whitelist", whitelist).apply();
         Toast.makeText(this, "App removido!", Toast.LENGTH_SHORT).show();
-        
+
         if (!modoManutencaoAtivo) {
             setAppsSuspended(true);
         }
@@ -246,7 +263,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Erro ao aplicar travas do sistema como Device Owner", e);
         }
     }
 
@@ -261,11 +278,11 @@ public class MainActivity extends AppCompatActivity {
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
 
         for (PackageInfo pkg : packages) {
-            if (!pkg.packageName.equals(getPackageName()) && 
-                !whitelist.contains(pkg.packageName) &&
-                !pkg.packageName.contains("android.overlay") &&
-                !pkg.packageName.equals("android") &&
-                !pkg.packageName.contains("com.android.systemui")) {
+            if (!pkg.packageName.equals(getPackageName()) &&
+                    !whitelist.contains(pkg.packageName) &&
+                    !pkg.packageName.contains("android.overlay") &&
+                    !pkg.packageName.equals("android") &&
+                    !pkg.packageName.contains("com.android.systemui")) {
                 packagesToSuspend.add(pkg.packageName);
             }
         }
@@ -274,39 +291,120 @@ public class MainActivity extends AppCompatActivity {
             try {
                 dpm.setPackagesSuspended(adminComponent, packagesToSuspend.toArray(new String[0]), suspended);
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Erro ao alterar estado de suspensao de pacotes", e);
             }
         }
     }
 
+    private String calcularSHA256(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes("UTF-8"));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao calcular hash SHA-256 da senha", e);
+            return "";
+        }
+    }
+
     public void verificarSenhaManutencao(String senhaDigitada) {
-        if (senhaDigitada.equals(SENHA_MESTRE)) {
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        String senhaSalvaHash = pref.getString("senha_mestre_hash", SENHA_MESTRE_HASH);
+        if (calcularSHA256(senhaDigitada).equals(senhaSalvaHash)) {
             modoManutencaoAtivo = true;
-            getSharedPreferences("Configuracoes", MODE_PRIVATE)
-                    .edit().putBoolean("modoManutencaoAtivo", true).apply();
+            Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
+            whitelist.add("com.android.vending");
+            pref.edit()
+                    .putBoolean("modoManutencaoAtivo", true)
+                    .putStringSet("whitelist", whitelist)
+                    .apply();
 
             aplicarTravasDoSistema();
 
             btnDesbloquear.setVisibility(View.GONE);
             btnEncerrar.setVisibility(View.VISIBLE);
             layoutWhitelist.setVisibility(View.VISIBLE);
+            btnAlterarSenha.setVisibility(View.GONE);
+            etSenha.setVisibility(View.GONE);
             etSenha.setText("");
+            tvLogo.setText("Modo Manutenção");
             Toast.makeText(this, "MODO MANUTENÇÃO ATIVADO", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "Senha Incorreta!", Toast.LENGTH_SHORT).show();
         }
     }
 
+    private void mostrarDialogoAlterarSenha() {
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_alterar_senha, null);
+        EditText etSenhaAntiga = dialogView.findViewById(R.id.etSenhaAntiga);
+        EditText etSenhaNova = dialogView.findViewById(R.id.etSenhaNova);
+        EditText etSenhaNovaConfirmacao = dialogView.findViewById(R.id.etSenhaNovaConfirmacao);
+        Button btnCancel = dialogView.findViewById(R.id.btnDialogCancelAlterar);
+        Button btnConfirm = dialogView.findViewById(R.id.btnDialogConfirmAlterar);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(dialogView)
+                .create();
+
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+        btnConfirm.setOnClickListener(v -> {
+            String antiga = etSenhaAntiga.getText().toString().trim();
+            String nova = etSenhaNova.getText().toString().trim();
+            String novaConf = etSenhaNovaConfirmacao.getText().toString().trim();
+
+            if (antiga.isEmpty() || nova.isEmpty() || novaConf.isEmpty()) {
+                Toast.makeText(this, "Preencha todos os campos!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+            String senhaSalvaHash = pref.getString("senha_mestre_hash", SENHA_MESTRE_HASH);
+
+            if (!calcularSHA256(antiga).equals(senhaSalvaHash)) {
+                Toast.makeText(this, "Senha antiga incorreta!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!nova.equals(novaConf)) {
+                Toast.makeText(this, "As novas senhas nao coincidem!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String novaHash = calcularSHA256(nova);
+            pref.edit().putString("senha_mestre_hash", novaHash).apply();
+
+            Toast.makeText(this, "Senha administrativa alterada com sucesso!", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+
+        dialog.show();
+    }
+
     public void encerrarManutencao() {
         modoManutencaoAtivo = false;
-        getSharedPreferences("Configuracoes", MODE_PRIVATE)
-                .edit().putBoolean("modoManutencaoAtivo", false).apply();
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
+        whitelist.remove("com.android.vending");
+        pref.edit()
+                .putBoolean("modoManutencaoAtivo", false)
+                .putStringSet("whitelist", whitelist)
+                .apply();
 
         btnDesbloquear.setVisibility(View.VISIBLE);
         btnEncerrar.setVisibility(View.GONE);
         layoutWhitelist.setVisibility(View.GONE);
+        btnAlterarSenha.setVisibility(View.VISIBLE);
+        etSenha.setVisibility(View.VISIBLE);
         etSenha.setText("");
-        
+        tvLogo.setText("COLETOR BLOQUEADO");
+
         aplicarTravasDoSistema();
         Toast.makeText(this, "Coletor Trancado!", Toast.LENGTH_SHORT).show();
         moveTaskToBack(true);
