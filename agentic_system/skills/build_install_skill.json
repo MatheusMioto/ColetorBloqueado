@@ -1,0 +1,26 @@
+{
+  "name": "build_install_skill",
+  "description": "Compila o aplicativo Android ColetorBloqueado usando Gradle e realiza o deploy no dispositivo conectado usando ADB de forma automatizada.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "build_variant": {
+        "type": "string",
+        "enum": ["assembleDebug", "assembleRelease"],
+        "default": "assembleDebug",
+        "description": "A variante de build do Gradle a ser compilada."
+      },
+      "adb_flags": {
+        "type": "string",
+        "default": "-r -t",
+        "description": "Flags passadas ao ADB para a instalação (ex: -r para substituir, -t para permitir APKs de teste)."
+      }
+    },
+    "required": []
+  },
+  "execution": {
+    "type": "powershell",
+    "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/build_and_install.ps1",
+    "working_directory": "."
+  }
+}

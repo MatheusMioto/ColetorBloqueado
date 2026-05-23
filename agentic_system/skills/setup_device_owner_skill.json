@@ -1,0 +1,20 @@
+{
+  "name": "setup_device_owner_skill",
+  "description": "Ativa o privilégio de administrador absoluto do dispositivo (Device Owner) no Android para o app ColetorBloqueado via ADB. Requer que não haja nenhuma conta de usuário pré-configurada no aparelho.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "target_component": {
+        "type": "string",
+        "default": "com.brasil.coletorbloqueado/.MeuAdminReceiver",
+        "description": "O componente DeviceAdminReceiver encarregado de receber os privilégios."
+      }
+    },
+    "required": []
+  },
+  "execution": {
+    "type": "powershell",
+    "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/setup_device_owner.ps1",
+    "working_directory": "."
+  }
+}

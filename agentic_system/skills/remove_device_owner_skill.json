@@ -1,0 +1,20 @@
+{
+  "name": "remove_device_owner_skill",
+  "description": "Limpa os dados do aplicativo e tenta remover o status de administrador de dispositivo (Active Admin) via ADB. Útil para limpar o estado em emuladores e aparelhos de teste.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "package_name": {
+        "type": "string",
+        "default": "com.brasil.coletorbloqueado",
+        "description": "O ID do pacote do aplicativo cuja administração será removida."
+      }
+    },
+    "required": []
+  },
+  "execution": {
+    "type": "powershell",
+    "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/remove_device_owner.ps1",
+    "working_directory": "."
+  }
+}

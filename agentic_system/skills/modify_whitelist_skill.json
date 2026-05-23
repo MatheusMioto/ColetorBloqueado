@@ -1,0 +1,23 @@
+{
+  "name": "modify_whitelist_skill",
+  "description": "Adiciona ou remove aplicativos autorizados (whitelist) a executarem fora do modo manutenção. Pode ser feito modificando o código padrão ou enviando comandos de preferência do sistema via ADB.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["add", "remove", "clear", "list"],
+        "description": "Ação a ser executada na whitelist."
+      },
+      "package_name": {
+        "type": "string",
+        "description": "O nome do pacote do aplicativo a ser adicionado ou removido (ex: 'com.whatsapp'). Ignorado se a ação for 'clear' ou 'list'."
+      }
+    },
+    "required": ["action"]
+  },
+  "execution": {
+    "type": "powershell_or_adb",
+    "details": "Modifica os registros de whitelist injetando dados via 'adb shell run-as com.brasil.coletorbloqueado' ou gerando alterações na classe MainActivity.java pelo Developer Agent."
+  }
+}

@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
@@ -26,6 +28,8 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
@@ -46,10 +50,30 @@ public class MainActivity extends AppCompatActivity {
     private final String SENHA_MESTRE_HASH = "aa749413036a2a5395cb4392560efb7657382e6acd06fdc1857dd7c3443a8fa3";
     private boolean modoManutencaoAtivo = false;
 
-    private LinearLayout layoutSenha, layoutWhitelist;
+    private LinearLayout layoutSenha, layoutWhitelist, layoutTimer;
     private EditText etSenha;
-    private Button btnDesbloquear, btnEncerrar, btnAbrirListaApps, btnVerWhitelist, btnAlterarSenha;
+    private Button btnDesbloquear, btnEncerrar, btnGerenciarWhitelist, btnAlterarSenha, btnConfigurarTimer;
     private TextView tvLogo;
+
+    private TextView tvTimerRestante;
+    private final android.os.Handler timerHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable timerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            atualizarTimerVisual();
+            timerHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private final android.content.BroadcastReceiver manutencaoExpiradaReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("com.brasil.coletorbloqueado.ACAO_MANUTENCAO_EXPIRADA".equals(intent.getAction())) {
+                Toast.makeText(MainActivity.this, "Tempo de manutenção esgotado!", Toast.LENGTH_SHORT).show();
+                encerrarManutencao();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,29 +100,36 @@ public class MainActivity extends AppCompatActivity {
         etSenha = findViewById(R.id.etSenha);
         btnDesbloquear = findViewById(R.id.btnDesbloquear);
         btnEncerrar = findViewById(R.id.btnEncerrar);
-        btnAbrirListaApps = findViewById(R.id.btnAbrirListaApps);
-        btnVerWhitelist = findViewById(R.id.btnVerWhitelist);
+        btnGerenciarWhitelist = findViewById(R.id.btnGerenciarWhitelist);
         btnAlterarSenha = findViewById(R.id.btnAlterarSenha);
+
+        layoutTimer = findViewById(R.id.layoutTimer);
+        btnConfigurarTimer = findViewById(R.id.btnConfigurarTimer);
+        tvTimerRestante = findViewById(R.id.tvTimerRestante);
 
         layoutSenha.setVisibility(View.VISIBLE);
         if (modoManutencaoAtivo) {
             btnDesbloquear.setVisibility(View.GONE);
             btnEncerrar.setVisibility(View.VISIBLE);
             layoutWhitelist.setVisibility(View.VISIBLE);
+            layoutTimer.setVisibility(View.VISIBLE);
             btnAlterarSenha.setVisibility(View.GONE);
             etSenha.setVisibility(View.GONE);
             tvLogo.setText("Modo Manutenção");
+            configurarUITimerEIniciar();
         } else {
             btnAlterarSenha.setVisibility(View.VISIBLE);
             etSenha.setVisibility(View.VISIBLE);
             tvLogo.setText("COLETOR BLOQUEADO");
+            layoutWhitelist.setVisibility(View.GONE);
+            layoutTimer.setVisibility(View.GONE);
+            stopTimerUpdates();
         }
 
         btnDesbloquear.setOnClickListener(v -> verificarSenhaManutencao(etSenha.getText().toString()));
         btnEncerrar.setOnClickListener(v -> encerrarManutencao());
 
-        btnAbrirListaApps.setOnClickListener(v -> mostrarDialogoListaApps(false));
-        btnVerWhitelist.setOnClickListener(v -> mostrarDialogoListaApps(true));
+        btnGerenciarWhitelist.setOnClickListener(v -> mostrarDialogoListaApps());
         btnAlterarSenha.setOnClickListener(v -> mostrarDialogoAlterarSenha());
 
         // Inicia o serviço de background
@@ -109,22 +140,41 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(manutencaoExpiradaReceiver, new android.content.IntentFilter("com.brasil.coletorbloqueado.ACAO_MANUTENCAO_EXPIRADA"), Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(manutencaoExpiradaReceiver, new android.content.IntentFilter("com.brasil.coletorbloqueado.ACAO_MANUTENCAO_EXPIRADA"));
+        }
+
         aplicarTravasDoSistema();
     }
 
-    private void mostrarDialogoListaApps(boolean apenasWhitelist) {
+    private void mostrarDialogoListaApps() {
         PackageManager pm = getPackageManager();
-        List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
 
-        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-        Set<String> whitelistSet = pref.getStringSet("whitelist", new HashSet<>());
+        // Obter todos os pacotes com intent de lançamento para filtrar serviços/background apps
+        Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
+        mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> launchableActivities = pm.queryIntentActivities(mainIntent, 0);
+        Set<String> launchablePackages = new HashSet<>();
+        for (ResolveInfo ri : launchableActivities) {
+            launchablePackages.add(ri.activityInfo.packageName);
+        }
+
+        SharedPreferences preferences = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        Set<String> whitelistSet = preferences.getStringSet("whitelist", new HashSet<>());
+
+        List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
 
         final List<AppEntry> allAppsData = new ArrayList<>();
         for (ApplicationInfo app : apps) {
             // Oculta a Play Store para que nao seja exibida nas listas de whitelist
             if (app.packageName.equals("com.android.vending")) continue;
 
-            if (apenasWhitelist && !whitelistSet.contains(app.packageName)) continue;
+            // Filtra: mostra apenas se for app iniciável (launcher) OU se já estiver na whitelist (por segurança)
+            if (!launchablePackages.contains(app.packageName) && !whitelistSet.contains(app.packageName)) {
+                continue;
+            }
 
             allAppsData.add(new AppEntry(
                     app.loadLabel(pm).toString(),
@@ -134,7 +184,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Collections.sort(allAppsData, (a, b) -> a.name.compareToIgnoreCase(b.name));
-        final List<AppEntry> filteredApps = new ArrayList<>(allAppsData);
+
+        final List<AppEntry> filteredApps = new ArrayList<>();
 
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_select_app, null);
         EditText etSearch = dialogView.findViewById(R.id.etSearchApp);
@@ -142,56 +193,111 @@ public class MainActivity extends AppCompatActivity {
         Button btnClearAll = dialogView.findViewById(R.id.btnDialogClearAll);
         Button btnClose = dialogView.findViewById(R.id.btnDialogClose);
 
-        if (apenasWhitelist) {
-            btnClearAll.setVisibility(View.VISIBLE);
-        }
+        TextView tabBloqueados = dialogView.findViewById(R.id.tabBloqueados);
+        TextView tabLiberados = dialogView.findViewById(R.id.tabLiberados);
+
+        btnClearAll.setVisibility(View.GONE);
 
         final AppAdapter adapter = new AppAdapter(this, filteredApps);
         listView.setAdapter(adapter);
 
-        // Diálogo sem o botão nativo para não duplicar o "Fechar"
+        final boolean[] mostrandoBloqueados = {true};
+
+        final Runnable atualizarTabsVisuais = new Runnable() {
+            @Override
+            public void run() {
+                if (mostrandoBloqueados[0]) {
+                    tabBloqueados.setBackgroundColor(Color.parseColor("#2196F3"));
+                    tabBloqueados.setTextColor(Color.parseColor("#FFFFFF"));
+                    tabLiberados.setBackgroundColor(Color.TRANSPARENT);
+                    tabLiberados.setTextColor(Color.parseColor("#777777"));
+                    btnClearAll.setVisibility(View.GONE);
+                } else {
+                    tabLiberados.setBackgroundColor(Color.parseColor("#2196F3"));
+                    tabLiberados.setTextColor(Color.parseColor("#FFFFFF"));
+                    tabBloqueados.setBackgroundColor(Color.TRANSPARENT);
+                    tabBloqueados.setTextColor(Color.parseColor("#777777"));
+                    btnClearAll.setVisibility(View.VISIBLE);
+                }
+            }
+        };
+
+        final Runnable recriarLista = new Runnable() {
+            @Override
+            public void run() {
+                SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+                Set<String> whitelistSet = pref.getStringSet("whitelist", new HashSet<>());
+                String query = etSearch.getText().toString().toLowerCase().trim();
+
+                filteredApps.clear();
+                for (AppEntry app : allAppsData) {
+                    if (!query.isEmpty() && !app.name.toLowerCase().contains(query) && !app.packageName.toLowerCase().contains(query)) {
+                        continue;
+                    }
+
+                    boolean isWhitelisted = whitelistSet.contains(app.packageName);
+                    if (mostrandoBloqueados[0]) {
+                        if (!isWhitelisted) {
+                            filteredApps.add(app);
+                        }
+                    } else {
+                        if (isWhitelisted) {
+                            filteredApps.add(app);
+                        }
+                    }
+                }
+                adapter.notifyDataSetChanged();
+            }
+        };
+
+        tabBloqueados.setOnClickListener(v -> {
+            if (!mostrandoBloqueados[0]) {
+                mostrandoBloqueados[0] = true;
+                atualizarTabsVisuais.run();
+                recriarLista.run();
+            }
+        });
+
+        tabLiberados.setOnClickListener(v -> {
+            if (mostrandoBloqueados[0]) {
+                mostrandoBloqueados[0] = false;
+                atualizarTabsVisuais.run();
+                recriarLista.run();
+            }
+        });
+
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(apenasWhitelist ? "Remover da Whitelist" : "Adicionar à Whitelist")
+                .setTitle("Gerenciar Whitelist")
                 .setView(dialogView)
                 .create();
 
         btnClearAll.setOnClickListener(v -> {
             limparWhitelist();
-            dialog.dismiss();
+            recriarLista.run();
         });
 
-        // Único botão de fechar no canto inferior direito
         btnClose.setOnClickListener(v -> dialog.dismiss());
 
         etSearch.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String query = s.toString().toLowerCase().trim();
-                filteredApps.clear();
-                for (AppEntry app : allAppsData) {
-                    if (app.name.toLowerCase().contains(query) || app.packageName.toLowerCase().contains(query)) {
-                        filteredApps.add(app);
-                    }
-                }
-                adapter.notifyDataSetChanged();
+                recriarLista.run();
             }
             @Override public void afterTextChanged(Editable s) {}
         });
 
         listView.setOnItemClickListener((parent, view, position, id) -> {
             AppEntry selected = filteredApps.get(position);
-            if (apenasWhitelist) {
-                removerAppWhitelist(selected.packageName);
-                allAppsData.remove(selected);
-                filteredApps.remove(selected);
-                adapter.notifyDataSetChanged();
-                if (filteredApps.isEmpty()) dialog.dismiss();
-            } else {
+            if (mostrandoBloqueados[0]) {
                 adicionarAppWhitelist(selected.packageName);
-                dialog.dismiss();
+            } else {
+                removerAppWhitelist(selected.packageName);
             }
+            recriarLista.run();
         });
 
+        atualizarTabsVisuais.run();
+        recriarLista.run();
         dialog.show();
     }
 
@@ -231,6 +337,17 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         aplicarTravasDoSistema();
+        if (modoManutencaoAtivo) {
+            configurarUITimerEIniciar();
+        } else {
+            stopTimerUpdates();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopTimerUpdates();
     }
 
     private void aplicarTravasDoSistema() {
@@ -320,16 +437,24 @@ public class MainActivity extends AppCompatActivity {
             modoManutencaoAtivo = true;
             Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
             whitelist.add("com.android.vending");
+            
+            // Defina o tempo de expiração inicial (5 minutos por padrão)
+            long expTime = System.currentTimeMillis() + (5 * 60 * 1000);
+            
             pref.edit()
                     .putBoolean("modoManutencaoAtivo", true)
                     .putStringSet("whitelist", whitelist)
+                    .putLong("manutencao_expiracao_timestamp", expTime)
+                    .putInt("manutencao_timer_opcao_index", 0)
                     .apply();
 
             aplicarTravasDoSistema();
+            configurarUITimerEIniciar();
 
             btnDesbloquear.setVisibility(View.GONE);
             btnEncerrar.setVisibility(View.VISIBLE);
             layoutWhitelist.setVisibility(View.VISIBLE);
+            layoutTimer.setVisibility(View.VISIBLE);
             btnAlterarSenha.setVisibility(View.GONE);
             etSenha.setVisibility(View.GONE);
             etSenha.setText("");
@@ -389,17 +514,21 @@ public class MainActivity extends AppCompatActivity {
 
     public void encerrarManutencao() {
         modoManutencaoAtivo = false;
+        stopTimerUpdates();
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
         whitelist.remove("com.android.vending");
         pref.edit()
                 .putBoolean("modoManutencaoAtivo", false)
                 .putStringSet("whitelist", whitelist)
+                .remove("manutencao_expiracao_timestamp")
+                .remove("manutencao_timer_opcao_index")
                 .apply();
 
         btnDesbloquear.setVisibility(View.VISIBLE);
         btnEncerrar.setVisibility(View.GONE);
         layoutWhitelist.setVisibility(View.GONE);
+        layoutTimer.setVisibility(View.GONE);
         btnAlterarSenha.setVisibility(View.VISIBLE);
         etSenha.setVisibility(View.VISIBLE);
         etSenha.setText("");
@@ -408,6 +537,103 @@ public class MainActivity extends AppCompatActivity {
         aplicarTravasDoSistema();
         Toast.makeText(this, "Coletor Trancado!", Toast.LENGTH_SHORT).show();
         moveTaskToBack(true);
+    }
+
+    private void configurarUITimerEIniciar() {
+        btnConfigurarTimer.setOnClickListener(v -> {
+            SharedPreferences preferences = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+            int checkedItem = preferences.getInt("manutencao_timer_opcao_index", 0);
+
+            String[] items = {"5 minutos", "15 minutos", "30 minutos", "Desativar temporizador (sem limite)"};
+
+            new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("Tempo de Manutenção")
+                    .setSingleChoiceItems(items, checkedItem, (dialog, which) -> {
+                        long now = System.currentTimeMillis();
+                        long newExpTime;
+                        if (which == 0) {
+                            newExpTime = now + (5 * 60 * 1000);
+                        } else if (which == 1) {
+                            newExpTime = now + (15 * 60 * 1000);
+                        } else if (which == 2) {
+                            newExpTime = now + (30 * 60 * 1000);
+                        } else {
+                            newExpTime = 0;
+                        }
+
+                        preferences.edit()
+                                .putLong("manutencao_expiracao_timestamp", newExpTime)
+                                .putInt("manutencao_timer_opcao_index", which)
+                                .apply();
+
+                        if (newExpTime == 0) {
+                            tvTimerRestante.setText("Temporizador Desativado (Sem Limite)");
+                            tvTimerRestante.setTextColor(android.graphics.Color.parseColor("#008000"));
+                            stopTimerUpdates();
+                        } else {
+                            tvTimerRestante.setTextColor(android.graphics.Color.parseColor("#FF0000"));
+                            startTimerUpdates();
+                        }
+
+                        dialog.dismiss();
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+        });
+
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        long expTime = pref.getLong("manutencao_expiracao_timestamp", 0);
+        if (expTime == 0) {
+            tvTimerRestante.setText("Temporizador Desativado (Sem Limite)");
+            tvTimerRestante.setTextColor(android.graphics.Color.parseColor("#008000"));
+            stopTimerUpdates();
+        } else {
+            tvTimerRestante.setTextColor(android.graphics.Color.parseColor("#FF0000"));
+            startTimerUpdates();
+        }
+    }
+
+    private void startTimerUpdates() {
+        stopTimerUpdates();
+        timerHandler.post(timerRunnable);
+    }
+
+    private void stopTimerUpdates() {
+        timerHandler.removeCallbacks(timerRunnable);
+    }
+
+    private void atualizarTimerVisual() {
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        long expTime = pref.getLong("manutencao_expiracao_timestamp", 0);
+        if (expTime == 0) {
+            tvTimerRestante.setText("Temporizador Desativado (Sem Limite)");
+            tvTimerRestante.setTextColor(android.graphics.Color.parseColor("#008000"));
+            stopTimerUpdates();
+            return;
+        }
+
+        long diff = expTime - System.currentTimeMillis();
+        if (diff <= 0) {
+            tvTimerRestante.setText("Tempo esgotado!");
+            stopTimerUpdates();
+            encerrarManutencao();
+        } else {
+            long totalSegundos = diff / 1000;
+            long minutos = totalSegundos / 60;
+            long segundos = totalSegundos % 60;
+            tvTimerRestante.setText(String.format("Tempo restante: %02d:%02d", minutos, segundos));
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        try {
+            unregisterReceiver(manutencaoExpiradaReceiver);
+        } catch (Exception e) {
+            // Ignorar se não registrado
+        }
+        stopTimerUpdates();
     }
 
     private static class AppEntry {
@@ -431,9 +657,20 @@ public class MainActivity extends AppCompatActivity {
             this.apps = apps;
         }
 
-        @Override public int getCount() { return apps.size(); }
-        @Override public Object getItem(int position) { return apps.get(position); }
-        @Override public long getItemId(int position) { return position; }
+        @Override
+        public int getCount() {
+            return apps.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return apps.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {

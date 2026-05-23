@@ -28,6 +28,15 @@ public class MonitoramentoService extends Service {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
 
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable verificadorRunnable = new Runnable() {
+        @Override
+        public void run() {
+            verificarTimerManutencao();
+            handler.postDelayed(this, 5000); // Executa a cada 5 segundos
+        }
+    };
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -51,6 +60,9 @@ public class MonitoramentoService extends Service {
         } else {
             liberarBloqueioSilencioso();
         }
+
+        // Inicia o verificador periódico
+        handler.post(verificadorRunnable);
     }
 
     private void aplicarBloqueioSilencioso() {
@@ -121,6 +133,34 @@ public class MonitoramentoService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacks(verificadorRunnable);
+    }
+
+    private void verificarTimerManutencao() {
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+        if (modoManutencaoAtivo) {
+            long expTime = pref.getLong("manutencao_expiracao_timestamp", 0);
+            if (expTime > 0 && System.currentTimeMillis() >= expTime) {
+                Log.d(TAG, "Temporizador de manutencao esgotado no Service. Bloqueando coletor...");
+                
+                pref.edit()
+                        .putBoolean("modoManutencaoAtivo", false)
+                        .remove("manutencao_expiracao_timestamp")
+                        .remove("manutencao_timer_opcao_index")
+                        .apply();
+                
+                aplicarBloqueioSilencioso();
+                
+                Intent intent = new Intent("com.brasil.coletorbloqueado.ACAO_MANUTENCAO_EXPIRADA");
+                sendBroadcast(intent);
+            }
+        }
     }
 
     private void createNotificationChannel() {

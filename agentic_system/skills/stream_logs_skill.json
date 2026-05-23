@@ -1,0 +1,23 @@
+{
+  "name": "stream_logs_skill",
+  "description": "Exibe e filtra logs em tempo real do aplicativo ColetorBloqueado diretamente via ADB Logcat para depurar comportamento e segurança.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filters": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": ["MainActivity:D", "MonitoramentoService:D", "MeuAdminReceiver:D", "AndroidRuntime:E", "*:S"],
+        "description": "Especificações de filtros e tags de logcat (ex: TAG:Nível)."
+      }
+    },
+    "required": []
+  },
+  "execution": {
+    "type": "powershell",
+    "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/stream_logs.ps1",
+    "working_directory": "."
+  }
+}

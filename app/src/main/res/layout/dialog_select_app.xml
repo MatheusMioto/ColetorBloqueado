@@ -5,6 +5,42 @@
     android:orientation="vertical"
     android:padding="12dp">
 
+    <!-- Abas de navegação fluida -->
+    <LinearLayout
+        android:id="@+id/layoutDialogTabs"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#F5F5F5"
+        android:padding="4dp"
+        android:layout_marginBottom="12dp">
+
+        <TextView
+            android:id="@+id/tabBloqueados"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Bloqueados"
+            android:gravity="center"
+            android:padding="10dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:background="#2196F3" />
+
+        <TextView
+            android:id="@+id/tabLiberados"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Liberados"
+            android:gravity="center"
+            android:padding="10dp"
+            android:textSize="14sp"
+            android:textColor="#777777"
+            android:background="@android:color/transparent" />
+    </LinearLayout>
+
     <EditText
         android:id="@+id/etSearchApp"
         android:layout_width="match_parent"
