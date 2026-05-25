@@ -13,15 +13,22 @@ import java.security.MessageDigest;
 
 public class SettingsPasswordActivity extends AppCompatActivity {
     private static final String TAG = "SettingsPassword";
-    private static final String SENHA_MESTRE_HASH = "aa749413036a2a5395cb4392560efb7657382e6acd06fdc1857dd7c3443a8fa3";
+    private static final String SENHA_MESTRE_HASH = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
 
     private EditText etSenhaSettings;
     private Button btnCancelSettings, btnConfirmSettings;
+    private String targetPackage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings_password);
+
+        targetPackage = getIntent().getStringExtra("target_package");
+        if (targetPackage == null || targetPackage.isEmpty()) {
+            voltarParaHome();
+            return;
+        }
 
         etSenhaSettings = findViewById(R.id.etSenhaSettings);
         btnCancelSettings = findViewById(R.id.btnCancelSettings);
@@ -29,6 +36,13 @@ public class SettingsPasswordActivity extends AppCompatActivity {
 
         btnCancelSettings.setOnClickListener(v -> voltarParaHome());
         btnConfirmSettings.setOnClickListener(v -> validarSenha());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        targetPackage = intent.getStringExtra("target_package");
     }
 
     private void validarSenha() {
@@ -43,9 +57,8 @@ public class SettingsPasswordActivity extends AppCompatActivity {
         String hashDigitado = calcularSHA256(senha);
 
         if (hashDigitado.equals(senhaSalvaHash)) {
-            // Desbloqueia temporariamente
-            MonitoramentoService.settingsUnlocked = true;
-            MonitoramentoService.settingsUnlockedTime = System.currentTimeMillis();
+            // Desbloqueia temporariamente apenas o pacote selecionado
+            MonitoramentoService.unlockedPackages.put(targetPackage, System.currentTimeMillis());
             Toast.makeText(this, "Acesso autorizado!", Toast.LENGTH_SHORT).show();
             finish();
         } else {

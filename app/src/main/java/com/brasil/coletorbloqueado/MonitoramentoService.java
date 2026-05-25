@@ -31,8 +31,7 @@ public class MonitoramentoService extends Service {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
 
-    public static boolean settingsUnlocked = false;
-    public static long settingsUnlockedTime = 0;
+    public static final java.util.Map<String, Long> unlockedPackages = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable verificadorRunnable = new Runnable() {
@@ -59,13 +58,10 @@ public class MonitoramentoService extends Service {
                 // Só suspende/oculta se NÃO estiver no modo manutenção
                 if (!modoManutencaoAtivo && dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
                     try {
-                        // Suspende Settings (funciona nativamente)
-                        dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, true);
-                        // Oculta a Play Store (como a suspensão falha para vending, ocultar é 100% eficaz)
-                        dpm.setApplicationHidden(adminComponent, "com.android.vending", true);
-                        Log.d(TAG, "Settings suspenso e Play Store oculta com sucesso no desligamento.");
+                        setAppsSuspended(true);
+                        Log.d(TAG, "Todos os aplicativos bloqueados suspensos no desligamento.");
                     } catch (Exception e) {
-                        Log.e(TAG, "Erro ao suspender/ocultar no desligamento dinâmico", e);
+                        Log.e(TAG, "Erro ao suspender aplicativos no desligamento dinâmico", e);
                     }
                 }
             }
@@ -78,14 +74,13 @@ public class MonitoramentoService extends Service {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MeuAdminReceiver.class);
         
-        // Ao iniciar o serviço, remove a suspensão de Settings e exibe a Play Store
+        // Ao iniciar o serviço, remove a suspensão de todos os apps e exibe a Play Store
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
-                dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, false);
-                dpm.setApplicationHidden(adminComponent, "com.android.vending", false);
-                Log.d(TAG, "Serviço iniciado. Settings removido de suspensão e Play Store exibida.");
+                setAppsSuspended(false);
+                Log.d(TAG, "Serviço iniciado. Todos os aplicativos removidos de suspensão.");
             } catch (Exception e) {
-                Log.e(TAG, "Erro ao restaurar Settings/Play Store ao iniciar serviço", e);
+                Log.e(TAG, "Erro ao desuspender aplicativos ao iniciar serviço", e);
             }
         }
 
@@ -124,7 +119,7 @@ public class MonitoramentoService extends Service {
                 dpm.setStatusBarDisabled(adminComponent, true);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
-                setAppsSuspended(true);
+                setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao aplicar bloqueio silencioso corporativo", e);
             }
@@ -159,14 +154,14 @@ public class MonitoramentoService extends Service {
             String pName = pkg.packageName;
             if (pName.equals(getPackageName())) continue;
             
-            // Settings e Play Store não devem ser suspensos de sistema enquanto o serviço está ativo
-            if ("com.android.settings".equals(pName) || "com.android.vending".equals(pName)) {
+            // Play Store é tratada via ocultação (setApplicationHidden) pois a suspensão falha nela
+            if ("com.android.vending".equals(pName)) {
                 continue;
             }
 
             if (whitelist.contains(pName)) continue;
 
-            if (launcherPackages.contains(pName)) continue;
+            if (launcherPackages.contains(pName) && !pName.equals("com.android.settings")) continue;
 
             if (pName.contains("android.overlay") || pName.equals("android") || 
                 pName.contains("com.android.systemui")) {
@@ -182,6 +177,12 @@ public class MonitoramentoService extends Service {
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao alterar estado de suspensao de pacotes corporativos", e);
             }
+        }
+
+        try {
+            dpm.setApplicationHidden(adminComponent, "com.android.vending", suspended);
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao ocultar/exibir Play Store", e);
         }
     }
 
@@ -224,19 +225,38 @@ public class MonitoramentoService extends Service {
             Log.w(TAG, "Erro ao desregistrar shutdownReceiver dinâmico", e);
         }
 
-        // Fail-safe: suspende Settings e oculta Play Store se o serviço for destruído (e não em manutenção)
+        // Fail-safe: suspende todos os aplicativos se o serviço for destruído (e não em manutenção)
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
 
         if (!modoManutencaoAtivo && dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
-                dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, true);
-                dpm.setApplicationHidden(adminComponent, "com.android.vending", true);
-                Log.d(TAG, "Serviço encerrado. Settings suspenso e Play Store oculta.");
+                setAppsSuspended(true);
+                Log.d(TAG, "Serviço encerrado. Todos os aplicativos bloqueados suspensos.");
             } catch (Exception e) {
-                Log.e(TAG, "Erro ao suspender/ocultar no onDestroy", e);
+                Log.e(TAG, "Erro ao suspender aplicativos no onDestroy", e);
             }
         }
+    }
+
+    private boolean isPackageBlocked(String packageName) {
+        if (packageName == null) return false;
+        if (packageName.equals(getPackageName())) return false; // Nosso app
+        
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
+        if (whitelist.contains(packageName)) return false;
+
+        Set<String> launcherPackages = getLauncherPackages();
+        if (launcherPackages.contains(packageName) && !packageName.equals("com.android.settings")) return false;
+
+        // Apps de sistema essenciais
+        if (packageName.contains("android.overlay") || packageName.equals("android") || 
+            packageName.contains("com.android.systemui")) {
+            return false;
+        }
+        
+        return true;
     }
 
     private void verificarTimerManutencao() {
@@ -272,22 +292,20 @@ public class MonitoramentoService extends Service {
             return;
         }
 
-        // Verifica se o desbloqueio temporário por senha expirou (limite de 30 segundos)
-        if (settingsUnlocked && (System.currentTimeMillis() - settingsUnlockedTime < 30 * 1000)) {
-            return; // Permite acesso temporário se desbloqueado recentemente
-        } else {
-            settingsUnlocked = false; // Expira a liberação temporária
-        }
-
         String foregroundPkg = getForegroundPackage();
         if (foregroundPkg == null) return;
 
-        // Se Settings ou Play Store chegarem ao foreground em modo bloqueio,
-        // lança a SettingsPasswordActivity para solicitar senha.
-        if ("com.android.settings".equalsIgnoreCase(foregroundPkg)
-                || "com.android.vending".equalsIgnoreCase(foregroundPkg)) {
+        // Se o pacote atual for o desbloqueado temporariamente, e ainda estiver na janela de 30s, permite acesso
+        Long unlockedTime = unlockedPackages.get(foregroundPkg);
+        if (unlockedTime != null && (System.currentTimeMillis() - unlockedTime < 30 * 1000)) {
+            return; // Permite acesso temporário a este app específico
+        }
+
+        // Se o aplicativo em foreground for bloqueado, solicita senha
+        if (isPackageBlocked(foregroundPkg)) {
             Log.d(TAG, "Bloqueio ativo: " + foregroundPkg + " em foreground. Iniciando SettingsPasswordActivity.");
             Intent bloqueioIntent = new Intent(this, SettingsPasswordActivity.class);
+            bloqueioIntent.putExtra("target_package", foregroundPkg);
             bloqueioIntent.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_CLEAR_TOP

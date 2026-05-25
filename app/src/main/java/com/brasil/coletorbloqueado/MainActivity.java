@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
-    private final String SENHA_MESTRE_HASH = "aa749413036a2a5395cb4392560efb7657382e6acd06fdc1857dd7c3443a8fa3";
+    private final String SENHA_MESTRE_HASH = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
     private boolean modoManutencaoAtivo = false;
     public static boolean isChangingHome = false;
 
@@ -181,7 +181,7 @@ public class MainActivity extends AppCompatActivity {
             if (app.packageName.equals("com.android.vending")) continue;
 
             // Oculta a Home do dispositivo para que o usuário não a remova/bloqueie
-            if (launcherPackages.contains(app.packageName)) continue;
+            if (launcherPackages.contains(app.packageName) && !app.packageName.equals("com.android.settings")) continue;
 
             // Filtra: mostra apenas se for app iniciável (launcher) OU se já estiver na whitelist (por segurança)
             if (!launchablePackages.contains(app.packageName) && !whitelistSet.contains(app.packageName)) {
@@ -417,7 +417,7 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "App permitido!", Toast.LENGTH_SHORT).show();
 
         if (!modoManutencaoAtivo) {
-            setAppsSuspended(true);
+            setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
         }
     }
 
@@ -429,7 +429,7 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "App removido!", Toast.LENGTH_SHORT).show();
 
         if (!modoManutencaoAtivo) {
-            setAppsSuspended(true);
+            setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
         }
     }
 
@@ -437,7 +437,7 @@ public class MainActivity extends AppCompatActivity {
         getSharedPreferences("Configuracoes", MODE_PRIVATE).edit().remove("whitelist").apply();
         Toast.makeText(this, "Whitelist limpa!", Toast.LENGTH_SHORT).show();
         if (!modoManutencaoAtivo) {
-            setAppsSuspended(true);
+            setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
         }
     }
 
@@ -450,7 +450,7 @@ public class MainActivity extends AppCompatActivity {
             pref.edit().putBoolean("isChangingHome", false).apply();
             isChangingHome = false;
             if (!modoManutencaoAtivo) {
-                setAppsSuspended(true);
+                setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
             }
         }
 
@@ -489,7 +489,7 @@ public class MainActivity extends AppCompatActivity {
                     dpm.setStatusBarDisabled(adminComponent, true);
                     dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
                     dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS);
-                    setAppsSuspended(true);
+                    setAppsSuspended(false); // Mantém desuspendido para permitir a interceptação por senha
                 } else {
                     dpm.setStatusBarDisabled(adminComponent, false);
                     dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS);
@@ -517,13 +517,13 @@ public class MainActivity extends AppCompatActivity {
             String pName = pkg.packageName;
             if (pName.equals(getPackageName())) continue;
             
-            // Settings e Play Store não devem ser suspensos de sistema enquanto o serviço/app está ativo
-            if ("com.android.settings".equals(pName) || "com.android.vending".equals(pName)) {
+            // Play Store é tratada via ocultação (setApplicationHidden) pois a suspensão falha nela
+            if ("com.android.vending".equals(pName)) {
                 continue;
             }
 
             if (whitelist.contains(pName)) continue;
-            if (launcherPackages.contains(pName)) continue;
+            if (launcherPackages.contains(pName) && !pName.equals("com.android.settings")) continue;
             if (pName.contains("android.overlay") || pName.equals("android") || pName.contains("com.android.systemui")) {
                 continue;
             }
@@ -536,6 +536,12 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao alterar estado de suspensao de pacotes", e);
             }
+        }
+
+        try {
+            dpm.setApplicationHidden(adminComponent, "com.android.vending", suspended);
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao ocultar/exibir Play Store", e);
         }
     }
 
