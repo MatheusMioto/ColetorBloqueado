@@ -87,12 +87,7 @@ public class HomeRestoreReceiver extends BroadcastReceiver {
             dpm.addPersistentPreferredActivity(adminComponent, homeFilter, targetComponent);
             Log.d(TAG, "Home padrão alterado com sucesso para: " + targetComponent.flattenToString());
 
-            // 4. Bloqueia/Suspende novamente as Configurações do Android
-            try {
-                dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, true);
-            } catch (Exception e) {
-                Log.w(TAG, "Erro ao re-suspender settings: " + e.getMessage());
-            }
+
 
             // 5. Salva o pacote preferido de Home e limpa a flag temporária de troca
             pref.edit()

@@ -516,12 +516,15 @@ public class MainActivity extends AppCompatActivity {
         for (PackageInfo pkg : packages) {
             String pName = pkg.packageName;
             if (pName.equals(getPackageName())) continue;
+            
+            // Settings e Play Store não devem ser suspensos de sistema enquanto o serviço/app está ativo
+            if ("com.android.settings".equals(pName) || "com.android.vending".equals(pName)) {
+                continue;
+            }
+
             if (whitelist.contains(pName)) continue;
             if (launcherPackages.contains(pName)) continue;
             if (pName.contains("android.overlay") || pName.equals("android") || pName.contains("com.android.systemui")) {
-                continue;
-            }
-            if (pName.equals("com.android.settings") || pName.equals("com.android.vending")) {
                 continue;
             }
             packagesToSuspend.add(pName);

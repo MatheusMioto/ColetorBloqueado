@@ -18,14 +18,12 @@ import android.os.UserManager;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import android.app.usage.UsageStats;
+import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
 
 public class MonitoramentoService extends Service {
     private static final String TAG = "MonitoramentoService";
@@ -46,12 +44,58 @@ public class MonitoramentoService extends Service {
         }
     };
 
+    private final android.content.BroadcastReceiver shutdownReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            Log.d(TAG, "ShutdownReceiver dinâmico recebeu ação: " + action);
+            if (Intent.ACTION_SHUTDOWN.equals(action) ||
+                "android.intent.action.QUICKBOOT_POWEROFF".equals(action) ||
+                "com.htc.intent.action.QUICKBOOT_POWEROFF".equals(action)) {
+                
+                SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+                boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+
+                // Só suspende/oculta se NÃO estiver no modo manutenção
+                if (!modoManutencaoAtivo && dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                    try {
+                        // Suspende Settings (funciona nativamente)
+                        dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, true);
+                        // Oculta a Play Store (como a suspensão falha para vending, ocultar é 100% eficaz)
+                        dpm.setApplicationHidden(adminComponent, "com.android.vending", true);
+                        Log.d(TAG, "Settings suspenso e Play Store oculta com sucesso no desligamento.");
+                    } catch (Exception e) {
+                        Log.e(TAG, "Erro ao suspender/ocultar no desligamento dinâmico", e);
+                    }
+                }
+            }
+        }
+    };
+
     @Override
     public void onCreate() {
         super.onCreate();
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MeuAdminReceiver.class);
         
+        // Ao iniciar o serviço, remove a suspensão de Settings e exibe a Play Store
+        if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            try {
+                dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, false);
+                dpm.setApplicationHidden(adminComponent, "com.android.vending", false);
+                Log.d(TAG, "Serviço iniciado. Settings removido de suspensão e Play Store exibida.");
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao restaurar Settings/Play Store ao iniciar serviço", e);
+            }
+        }
+
+        // Registra o receptor de desligamento dinâmico
+        android.content.IntentFilter shutdownFilter = new android.content.IntentFilter();
+        shutdownFilter.addAction(Intent.ACTION_SHUTDOWN);
+        shutdownFilter.addAction("android.intent.action.QUICKBOOT_POWEROFF");
+        shutdownFilter.addAction("com.htc.intent.action.QUICKBOOT_POWEROFF");
+        registerReceiver(shutdownReceiver, shutdownFilter);
+
         createNotificationChannel();
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Segurança Ativa")
@@ -115,13 +159,14 @@ public class MonitoramentoService extends Service {
             String pName = pkg.packageName;
             if (pName.equals(getPackageName())) continue;
             
+            // Settings e Play Store não devem ser suspensos de sistema enquanto o serviço está ativo
+            if ("com.android.settings".equals(pName) || "com.android.vending".equals(pName)) {
+                continue;
+            }
+
             if (whitelist.contains(pName)) continue;
 
             if (launcherPackages.contains(pName)) continue;
-
-            if (pName.equals("com.android.settings") || pName.equals("com.android.vending")) {
-                continue;
-            }
 
             if (pName.contains("android.overlay") || pName.equals("android") || 
                 pName.contains("com.android.systemui")) {
@@ -156,6 +201,9 @@ public class MonitoramentoService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Verificação imediata ao subir o serviço: cobre o cenário onde
+        // Settings/Play Store já estão em foreground antes do loop periódico iniciar.
+        verificarConfiguracoesBloqueio();
         return START_STICKY;
     }
 
@@ -169,6 +217,26 @@ public class MonitoramentoService extends Service {
     public void onDestroy() {
         super.onDestroy();
         handler.removeCallbacks(verificadorRunnable);
+
+        try {
+            unregisterReceiver(shutdownReceiver);
+        } catch (Exception e) {
+            Log.w(TAG, "Erro ao desregistrar shutdownReceiver dinâmico", e);
+        }
+
+        // Fail-safe: suspende Settings e oculta Play Store se o serviço for destruído (e não em manutenção)
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+
+        if (!modoManutencaoAtivo && dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+            try {
+                dpm.setPackagesSuspended(adminComponent, new String[]{"com.android.settings"}, true);
+                dpm.setApplicationHidden(adminComponent, "com.android.vending", true);
+                Log.d(TAG, "Serviço encerrado. Settings suspenso e Play Store oculta.");
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao suspender/ocultar no onDestroy", e);
+            }
+        }
     }
 
     private void verificarTimerManutencao() {
@@ -195,52 +263,67 @@ public class MonitoramentoService extends Service {
 
     private void verificarConfiguracoesBloqueio() {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-        boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
-        if (modoManutencaoAtivo) {
-            return; // Se estiver em modo manutenção, o acesso é livre
+        if (pref.getBoolean("modoManutencaoAtivo", false)) {
+            return; // Em modo manutenção o acesso é livre
         }
 
-        String foregroundPkg = getForegroundPackage();
-        if (foregroundPkg == null) {
+        // Permite acesso temporário se estiver no fluxo de troca de Home
+        if (pref.getBoolean("isChangingHome", false)) {
             return;
         }
 
-        // Se o usuário estiver nas configurações do sistema ou na Google Play Store
-        if ("com.android.settings".equalsIgnoreCase(foregroundPkg) || "com.android.vending".equalsIgnoreCase(foregroundPkg)) {
-            // E as configurações não estiverem desbloqueadas ou o tempo expirou (limite de 5 min)
-            if (!settingsUnlocked || (System.currentTimeMillis() - settingsUnlockedTime > 5 * 60 * 1000)) {
-                settingsUnlocked = false; // Garante reset
-                
-                // Abre a tela de senha administrativa do coletor
-                Intent lockIntent = new Intent(this, SettingsPasswordActivity.class);
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(lockIntent);
-                Log.d(TAG, "Configurações/PlayStore acessadas. Exibindo tela de bloqueio por senha.");
-            }
-        } else if (!getPackageName().equalsIgnoreCase(foregroundPkg)) {
-            // Se o usuário saiu das configurações e PlayStore E não está na nossa tela de senha, re-bloqueia
-            settingsUnlocked = false;
+        String foregroundPkg = getForegroundPackage();
+        if (foregroundPkg == null) return;
+
+        // Fallback para dispositivos onde setPackagesSuspended não bloqueia apps de sistema:
+        // se Settings ou Play Store chegarem ao foreground em modo bloqueio,
+        // lança a BloqueioActivity — uma activity transparente que recebe o foco,
+        // depois lança o Home a partir de sua própria janela visível (sem restrições de BAL).
+        if ("com.android.settings".equalsIgnoreCase(foregroundPkg)
+                || "com.android.vending".equalsIgnoreCase(foregroundPkg)) {
+            Log.d(TAG, "Bloqueio ativo: " + foregroundPkg + " em foreground. Iniciando BloqueioActivity.");
+            Intent bloqueioIntent = new Intent(this, BloqueioActivity.class);
+            bloqueioIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+            );
+            startActivity(bloqueioIntent);
         }
     }
 
+    /**
+     * Detecta o app atualmente em foreground usando UsageEvents (eventos discretos em tempo real).
+     * Consulta eventos ACTIVITY_RESUMED nos últimos 2 minutos e retorna o pacote do
+     * último evento encontrado — que corresponde ao app efetivamente ativo na tela agora.
+     *
+     * Vantagens sobre queryUsageStats(INTERVAL_DAILY):
+     * - ACTIVITY_RESUMED é disparado no instante exato em que o app vai para foreground
+     * - Não depende de lastTimeUsed agregado, que pode apontar para apps não-ativos
+     * - A janela de 2 min cobre atrasos de boot sem retornar apps de sessões anteriores
+     */
     private String getForegroundPackage() {
-        String foregroundProcess = null;
-        UsageStatsManager mUsageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
-        if (mUsageStatsManager == null) {
-            return null;
-        }
-        long time = System.currentTimeMillis();
-        List<UsageStats> stats = mUsageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 1000 * 10, time);
-        if (stats != null) {
-            SortedMap<Long, UsageStats> mySortedMap = new TreeMap<>();
-            for (UsageStats usageStats : stats) {
-                mySortedMap.put(usageStats.getLastTimeUsed(), usageStats);
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return null;
+
+        long now = System.currentTimeMillis();
+        // Janela de 2 minutos: cobre atrasos pós-boot, mas não retorna eventos de sessões antigas
+        UsageEvents events = usm.queryEvents(now - 2 * 60 * 1000, now);
+
+        String lastForeground = null;
+        UsageEvents.Event event = new UsageEvents.Event();
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event);
+            int type = event.getEventType();
+            // ACTIVITY_RESUMED (API 29+) é o evento correto para Android Q e superior.
+            // MOVE_TO_FOREGROUND (valor 1, deprecated mas ainda gerado) cobre Android 9 e anteriores.
+            if (type == UsageEvents.Event.ACTIVITY_RESUMED
+                    || type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                lastForeground = event.getPackageName();
             }
-            if (!mySortedMap.isEmpty()) {
-                foregroundProcess = mySortedMap.get(mySortedMap.lastKey()).getPackageName();
-            }
         }
-        return foregroundProcess;
+        return lastForeground;
     }
 
     private void createNotificationChannel() {

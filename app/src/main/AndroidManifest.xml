@@ -39,6 +39,19 @@
             android:launchMode="singleInstance"
             android:theme="@style/Theme.ColetorBloqueado" />
 
+        <!--
+            Activity transparente de bloqueio.
+            Intermediária usada pelo MonitoramentoService para forçar a troca de foreground
+            de forma confiável em qualquer ROM, sem depender do BAL do serviço.
+        -->
+        <activity
+            android:name=".BloqueioActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".MeuAdminReceiver"
             android:label="Administrador do Coletor"
@@ -82,6 +95,8 @@
                 <action android:name="com.brasil.coletorbloqueado.ACAO_DEFINIR_HOME_PADRAO" />
             </intent-filter>
         </receiver>
+
+
 
         <!-- Serviço de Background -->
         <service android:name=".MonitoramentoService"
