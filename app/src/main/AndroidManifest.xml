@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="true"
@@ -25,10 +27,17 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsPasswordActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.ColetorBloqueado" />
 
         <receiver
             android:name=".MeuAdminReceiver"
@@ -60,6 +69,17 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.brasil.coletorbloqueado.ACAO_SOLICITAR_ALTERAR_HOME" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receptor para restaurar/alterar a Home padrão dinamicamente (ex: Mobile Butler) -->
+        <receiver
+            android:name=".HomeRestoreReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.brasil.coletorbloqueado.ACAO_RESTAURAR_HOME_PADRAO" />
+                <action android:name="com.brasil.coletorbloqueado.ACAO_DEFINIR_HOME_PADRAO" />
             </intent-filter>
         </receiver>
 

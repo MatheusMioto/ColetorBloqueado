@@ -18,10 +18,14 @@ import android.os.UserManager;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 public class MonitoramentoService extends Service {
     private static final String TAG = "MonitoramentoService";
@@ -29,12 +33,16 @@ public class MonitoramentoService extends Service {
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
 
+    public static boolean settingsUnlocked = false;
+    public static long settingsUnlockedTime = 0;
+
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable verificadorRunnable = new Runnable() {
         @Override
         public void run() {
             verificarTimerManutencao();
-            handler.postDelayed(this, 5000); // Executa a cada 5 segundos
+            verificarConfiguracoesBloqueio();
+            handler.postDelayed(this, 500); // Executa a cada 500ms
         }
     };
 
@@ -101,7 +109,7 @@ public class MonitoramentoService extends Service {
 
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
-        String defaultLauncher = getDefaultLauncherPackage();
+        Set<String> launcherPackages = getLauncherPackages();
 
         for (PackageInfo pkg : packages) {
             String pName = pkg.packageName;
@@ -109,9 +117,9 @@ public class MonitoramentoService extends Service {
             
             if (whitelist.contains(pName)) continue;
 
-            if (defaultLauncher != null && pName.equals(defaultLauncher)) continue;
+            if (launcherPackages.contains(pName)) continue;
 
-            if (pName.equals("com.android.settings") && pref.getBoolean("isChangingHome", false)) {
+            if (pName.equals("com.android.settings") || pName.equals("com.android.vending")) {
                 continue;
             }
 
@@ -132,15 +140,18 @@ public class MonitoramentoService extends Service {
         }
     }
 
-    private String getDefaultLauncherPackage() {
+    private Set<String> getLauncherPackages() {
+        Set<String> launchers = new HashSet<>();
         PackageManager pm = getPackageManager();
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_HOME);
-        ResolveInfo resolveInfo = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-        if (resolveInfo != null && resolveInfo.activityInfo != null) {
-            return resolveInfo.activityInfo.packageName;
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL);
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null) {
+                launchers.add(info.activityInfo.packageName);
+            }
         }
-        return null;
+        return launchers;
     }
 
     @Override
@@ -180,6 +191,56 @@ public class MonitoramentoService extends Service {
                 sendBroadcast(intent);
             }
         }
+    }
+
+    private void verificarConfiguracoesBloqueio() {
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+        if (modoManutencaoAtivo) {
+            return; // Se estiver em modo manutenção, o acesso é livre
+        }
+
+        String foregroundPkg = getForegroundPackage();
+        if (foregroundPkg == null) {
+            return;
+        }
+
+        // Se o usuário estiver nas configurações do sistema ou na Google Play Store
+        if ("com.android.settings".equalsIgnoreCase(foregroundPkg) || "com.android.vending".equalsIgnoreCase(foregroundPkg)) {
+            // E as configurações não estiverem desbloqueadas ou o tempo expirou (limite de 5 min)
+            if (!settingsUnlocked || (System.currentTimeMillis() - settingsUnlockedTime > 5 * 60 * 1000)) {
+                settingsUnlocked = false; // Garante reset
+                
+                // Abre a tela de senha administrativa do coletor
+                Intent lockIntent = new Intent(this, SettingsPasswordActivity.class);
+                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(lockIntent);
+                Log.d(TAG, "Configurações/PlayStore acessadas. Exibindo tela de bloqueio por senha.");
+            }
+        } else if (!getPackageName().equalsIgnoreCase(foregroundPkg)) {
+            // Se o usuário saiu das configurações e PlayStore E não está na nossa tela de senha, re-bloqueia
+            settingsUnlocked = false;
+        }
+    }
+
+    private String getForegroundPackage() {
+        String foregroundProcess = null;
+        UsageStatsManager mUsageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (mUsageStatsManager == null) {
+            return null;
+        }
+        long time = System.currentTimeMillis();
+        List<UsageStats> stats = mUsageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 1000 * 10, time);
+        if (stats != null) {
+            SortedMap<Long, UsageStats> mySortedMap = new TreeMap<>();
+            for (UsageStats usageStats : stats) {
+                mySortedMap.put(usageStats.getLastTimeUsed(), usageStats);
+            }
+            if (!mySortedMap.isEmpty()) {
+                foregroundProcess = mySortedMap.get(mySortedMap.lastKey()).getPackageName();
+            }
+        }
+        return foregroundProcess;
     }
 
     private void createNotificationChannel() {

@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
@@ -151,6 +152,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         aplicarTravasDoSistema();
+        if (!modoManutencaoAtivo) {
+            aplicarHomeConfigurada();
+        }
     }
 
     private void mostrarDialogoListaApps() {
@@ -171,13 +175,13 @@ public class MainActivity extends AppCompatActivity {
         List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
 
         final List<AppEntry> allAppsData = new ArrayList<>();
-        String defaultLauncher = getDefaultLauncherPackage();
+        Set<String> launcherPackages = getLauncherPackages();
         for (ApplicationInfo app : apps) {
             // Oculta a Play Store para que nao seja exibida nas listas de whitelist
             if (app.packageName.equals("com.android.vending")) continue;
 
             // Oculta a Home do dispositivo para que o usuário não a remova/bloqueie
-            if (defaultLauncher != null && app.packageName.equals(defaultLauncher)) continue;
+            if (launcherPackages.contains(app.packageName)) continue;
 
             // Filtra: mostra apenas se for app iniciável (launcher) OU se já estiver na whitelist (por segurança)
             if (!launchablePackages.contains(app.packageName) && !whitelistSet.contains(app.packageName)) {
@@ -309,13 +313,98 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    private String getDefaultLauncherPackage() {
+    private Set<String> getLauncherPackages() {
+        Set<String> launchers = new HashSet<>();
         PackageManager pm = getPackageManager();
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_HOME);
-        ResolveInfo resolveInfo = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-        if (resolveInfo != null && resolveInfo.activityInfo != null) {
-            return resolveInfo.activityInfo.packageName;
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL);
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null) {
+                launchers.add(info.activityInfo.packageName);
+            }
+        }
+        return launchers;
+    }
+
+    private void aplicarHomeConfigurada() {
+        if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) {
+            return;
+        }
+
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        String targetPackage = pref.getString("preferred_home_package", null);
+
+        // Se não houver Home personalizada configurada, removemos qualquer regra criada para deixar o Android decidir nativamente.
+        if (targetPackage == null || targetPackage.trim().isEmpty()) {
+            try {
+                dpm.clearPackagePersistentPreferredActivities(adminComponent, getPackageName());
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao limpar preferências persistentes de launcher", e);
+            }
+            return;
+        }
+
+        ComponentName targetComponent = getHomeActivityForPackage(targetPackage.trim());
+        if (targetComponent == null) {
+            Log.e(TAG, "Nenhum launcher de destino correspondente encontrado para: " + targetPackage);
+            return;
+        }
+
+        IntentFilter homeFilter = new IntentFilter(Intent.ACTION_MAIN);
+        homeFilter.addCategory(Intent.CATEGORY_HOME);
+        homeFilter.addCategory(Intent.CATEGORY_DEFAULT);
+
+        try {
+            dpm.clearPackagePersistentPreferredActivities(adminComponent, getPackageName());
+            dpm.clearPackagePersistentPreferredActivities(adminComponent, targetPackage);
+            dpm.addPersistentPreferredActivity(adminComponent, homeFilter, targetComponent);
+            Log.d(TAG, "Home persistente aplicada com sucesso: " + targetComponent.flattenToString());
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao aplicar Home persistente", e);
+        }
+    }
+
+    private ComponentName getHomeActivityForPackage(String packageName) {
+        PackageManager pm = getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, 0);
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null && info.activityInfo.packageName.equalsIgnoreCase(packageName)) {
+                return new ComponentName(info.activityInfo.packageName, info.activityInfo.name);
+            }
+        }
+        return null;
+    }
+
+    private ComponentName getSystemLauncherActivity() {
+        PackageManager pm = getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, 0);
+
+        // 1. Busca por launcher do sistema que não seja este próprio app
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null) {
+                String pkg = info.activityInfo.packageName;
+                if (pkg.equalsIgnoreCase(getPackageName())) {
+                    continue;
+                }
+                if ((info.activityInfo.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) {
+                    return new ComponentName(pkg, info.activityInfo.name);
+                }
+            }
+        }
+
+        // 2. Fallback: Primeiro launcher que não seja o nosso app
+        for (ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null) {
+                String pkg = info.activityInfo.packageName;
+                if (!pkg.equalsIgnoreCase(getPackageName())) {
+                    return new ComponentName(pkg, info.activityInfo.name);
+                }
+            }
         }
         return null;
     }
@@ -422,17 +511,17 @@ public class MainActivity extends AppCompatActivity {
 
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = pref.getStringSet("whitelist", new HashSet<>());
-        String defaultLauncher = getDefaultLauncherPackage();
+        Set<String> launcherPackages = getLauncherPackages();
 
         for (PackageInfo pkg : packages) {
             String pName = pkg.packageName;
             if (pName.equals(getPackageName())) continue;
             if (whitelist.contains(pName)) continue;
-            if (defaultLauncher != null && pName.equals(defaultLauncher)) continue;
+            if (launcherPackages.contains(pName)) continue;
             if (pName.contains("android.overlay") || pName.equals("android") || pName.contains("com.android.systemui")) {
                 continue;
             }
-            if (pName.equals("com.android.settings") && pref.getBoolean("isChangingHome", false)) {
+            if (pName.equals("com.android.settings") || pName.equals("com.android.vending")) {
                 continue;
             }
             packagesToSuspend.add(pName);
@@ -470,7 +559,6 @@ public class MainActivity extends AppCompatActivity {
         if (calcularSHA256(senhaDigitada).equals(senhaSalvaHash)) {
             modoManutencaoAtivo = true;
             Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
-            whitelist.add("com.android.vending");
             
             // Defina o tempo de expiração inicial (5 minutos por padrão)
             long expTime = System.currentTimeMillis() + (5 * 60 * 1000);
@@ -551,7 +639,6 @@ public class MainActivity extends AppCompatActivity {
         stopTimerUpdates();
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
-        whitelist.remove("com.android.vending");
         pref.edit()
                 .putBoolean("modoManutencaoAtivo", false)
                 .putStringSet("whitelist", whitelist)
@@ -569,6 +656,7 @@ public class MainActivity extends AppCompatActivity {
         tvLogo.setText("COLETOR BLOQUEADO");
 
         aplicarTravasDoSistema();
+        aplicarHomeConfigurada();
         Toast.makeText(this, "Coletor Trancado!", Toast.LENGTH_SHORT).show();
         moveTaskToBack(true);
     }
