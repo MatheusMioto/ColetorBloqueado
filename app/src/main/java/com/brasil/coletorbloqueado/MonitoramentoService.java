@@ -272,17 +272,22 @@ public class MonitoramentoService extends Service {
             return;
         }
 
+        // Verifica se o desbloqueio temporário por senha expirou (limite de 30 segundos)
+        if (settingsUnlocked && (System.currentTimeMillis() - settingsUnlockedTime < 30 * 1000)) {
+            return; // Permite acesso temporário se desbloqueado recentemente
+        } else {
+            settingsUnlocked = false; // Expira a liberação temporária
+        }
+
         String foregroundPkg = getForegroundPackage();
         if (foregroundPkg == null) return;
 
-        // Fallback para dispositivos onde setPackagesSuspended não bloqueia apps de sistema:
-        // se Settings ou Play Store chegarem ao foreground em modo bloqueio,
-        // lança a BloqueioActivity — uma activity transparente que recebe o foco,
-        // depois lança o Home a partir de sua própria janela visível (sem restrições de BAL).
+        // Se Settings ou Play Store chegarem ao foreground em modo bloqueio,
+        // lança a SettingsPasswordActivity para solicitar senha.
         if ("com.android.settings".equalsIgnoreCase(foregroundPkg)
                 || "com.android.vending".equalsIgnoreCase(foregroundPkg)) {
-            Log.d(TAG, "Bloqueio ativo: " + foregroundPkg + " em foreground. Iniciando BloqueioActivity.");
-            Intent bloqueioIntent = new Intent(this, BloqueioActivity.class);
+            Log.d(TAG, "Bloqueio ativo: " + foregroundPkg + " em foreground. Iniciando SettingsPasswordActivity.");
+            Intent bloqueioIntent = new Intent(this, SettingsPasswordActivity.class);
             bloqueioIntent.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_CLEAR_TOP
