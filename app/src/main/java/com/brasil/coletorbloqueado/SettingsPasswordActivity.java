@@ -13,7 +13,6 @@ import java.security.MessageDigest;
 
 public class SettingsPasswordActivity extends AppCompatActivity {
     private static final String TAG = "SettingsPassword";
-    private static final String SENHA_MESTRE_HASH = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
 
     private EditText etSenhaSettings;
     private Button btnCancelSettings, btnConfirmSettings;
@@ -27,6 +26,17 @@ public class SettingsPasswordActivity extends AppCompatActivity {
         targetPackage = getIntent().getStringExtra("target_package");
         if (targetPackage == null || targetPackage.isEmpty()) {
             voltarParaHome();
+            return;
+        }
+
+        SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+        String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
+        if (senhaSalvaHash == null) {
+            Toast.makeText(this, "Por favor, defina a senha no aplicativo principal primeiro!", Toast.LENGTH_LONG).show();
+            Intent mainIntent = new Intent(this, MainActivity.class);
+            mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(mainIntent);
+            finish();
             return;
         }
 
@@ -46,15 +56,21 @@ public class SettingsPasswordActivity extends AppCompatActivity {
     }
 
     private void validarSenha() {
-        String senha = etSenhaSettings.getText().toString();
+        String senha = etSenhaSettings.getText().toString().trim();
         if (senha.isEmpty()) {
             Toast.makeText(this, "Por favor, digite a senha!", Toast.LENGTH_SHORT).show();
             return;
         }
 
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-        String senhaSalvaHash = pref.getString("senha_mestre_hash", SENHA_MESTRE_HASH);
+        String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
+        Log.d(TAG, "validarSenha: senhaSalvaHash = " + senhaSalvaHash);
+        if (senhaSalvaHash == null) {
+            voltarParaHome();
+            return;
+        }
         String hashDigitado = calcularSHA256(senha);
+        Log.d(TAG, "validarSenha: senha = '" + senha + "', hashDigitado = " + hashDigitado);
 
         if (hashDigitado.equals(senhaSalvaHash)) {
             // Desbloqueia temporariamente apenas o pacote selecionado

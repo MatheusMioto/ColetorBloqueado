@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
-    private final String SENHA_MESTRE_HASH = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
+    // Senha padrão pré-setada foi removida para exigir a configuração na primeira inicialização.
     private boolean modoManutencaoAtivo = false;
     public static boolean isChangingHome = false;
 
@@ -84,10 +84,10 @@ public class MainActivity extends AppCompatActivity {
         // 1. Carrega o estado salvo imediatamente
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
+        String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
 
-        // 2. CORREÇÃO INVISIBILIDADE: Se NÃO estiver em manutenção, minimiza o app instantaneamente
-        // Isso evita que a interface apareça durante o boot do dispositivo
-        if (!modoManutencaoAtivo) {
+        // 2. CORREÇÃO INVISIBILIDADE: Se NÃO estiver em manutenção e a senha já estiver configurada, minimiza o app
+        if (!modoManutencaoAtivo && senhaSalvaHash != null) {
             moveTaskToBack(true);
         }
 
@@ -154,6 +154,10 @@ public class MainActivity extends AppCompatActivity {
         aplicarTravasDoSistema();
         if (!modoManutencaoAtivo) {
             aplicarHomeConfigurada();
+        }
+
+        if (senhaSalvaHash == null) {
+            mostrarDialogoDefinirSenha();
         }
     }
 
@@ -564,8 +568,16 @@ public class MainActivity extends AppCompatActivity {
 
     public void verificarSenhaManutencao(String senhaDigitada) {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-        String senhaSalvaHash = pref.getString("senha_mestre_hash", SENHA_MESTRE_HASH);
-        if (calcularSHA256(senhaDigitada).equals(senhaSalvaHash)) {
+        String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
+        Log.d(TAG, "verificarSenhaManutencao: senhaSalvaHash = " + senhaSalvaHash);
+        if (senhaSalvaHash == null) {
+            Toast.makeText(this, "Senha administrativa não configurada!", Toast.LENGTH_SHORT).show();
+            mostrarDialogoDefinirSenha();
+            return;
+        }
+        String hashDigitado = calcularSHA256(senhaDigitada != null ? senhaDigitada.trim() : "");
+        Log.d(TAG, "verificarSenhaManutencao: senhaDigitada = '" + senhaDigitada + "', hashDigitado = " + hashDigitado);
+        if (hashDigitado.equals(senhaSalvaHash)) {
             modoManutencaoAtivo = true;
             Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
             
@@ -612,16 +624,25 @@ public class MainActivity extends AppCompatActivity {
 
         btnConfirm.setOnClickListener(v -> {
             String antiga = etSenhaAntiga.getText().toString().trim();
-            String nova = etSenhaNova.getText().toString().trim();
-            String novaConf = etSenhaNovaConfirmacao.getText().toString().trim();
+            String nova = etSenhaNova.getText().toString();
+            String novaConf = etSenhaNovaConfirmacao.getText().toString();
 
             if (antiga.isEmpty() || nova.isEmpty() || novaConf.isEmpty()) {
                 Toast.makeText(this, "Preencha todos os campos!", Toast.LENGTH_SHORT).show();
                 return;
             }
 
+            if (nova.matches(".*\\s.*")) {
+                Toast.makeText(this, "A senha não pode conter espaços em branco!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
-            String senhaSalvaHash = pref.getString("senha_mestre_hash", SENHA_MESTRE_HASH);
+            String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
+            if (senhaSalvaHash == null) {
+                Toast.makeText(this, "Senha não configurada!", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
             if (!calcularSHA256(antiga).equals(senhaSalvaHash)) {
                 Toast.makeText(this, "Senha antiga incorreta!", Toast.LENGTH_SHORT).show();
@@ -637,6 +658,52 @@ public class MainActivity extends AppCompatActivity {
             pref.edit().putString("senha_mestre_hash", novaHash).apply();
 
             Toast.makeText(this, "Senha administrativa alterada com sucesso!", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+
+        dialog.show();
+    }
+
+    private void mostrarDialogoDefinirSenha() {
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_definir_senha, null);
+        EditText etSenhaNova = dialogView.findViewById(R.id.etSenhaNova);
+        EditText etSenhaNovaConfirmacao = dialogView.findViewById(R.id.etSenhaNovaConfirmacao);
+        Button btnConfirm = dialogView.findViewById(R.id.btnDialogConfirmDefinir);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(dialogView)
+                .setCancelable(false)
+                .create();
+
+        btnConfirm.setOnClickListener(v -> {
+            String nova = etSenhaNova.getText().toString();
+            String novaConf = etSenhaNovaConfirmacao.getText().toString();
+
+            if (nova.isEmpty() || novaConf.isEmpty()) {
+                Toast.makeText(this, "Preencha todos os campos!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (nova.matches(".*\\s.*")) {
+                Toast.makeText(this, "A senha não pode conter espaços em branco!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (nova.length() < 4) {
+                Toast.makeText(this, "A senha deve ter pelo menos 4 caracteres!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!nova.equals(novaConf)) {
+                Toast.makeText(this, "As senhas não coincidem!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String novaHash = calcularSHA256(nova);
+            SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
+            pref.edit().putString("senha_mestre_hash", novaHash).apply();
+
+            Toast.makeText(this, "Senha configurada com sucesso!", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
 
