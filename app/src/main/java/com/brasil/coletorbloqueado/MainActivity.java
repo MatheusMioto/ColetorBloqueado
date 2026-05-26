@@ -81,6 +81,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 0. Verificar se o setup inicial foi concluído
+        SharedPreferences setupPrefs = getSharedPreferences("ColetorBloqueadoPrefs", MODE_PRIVATE);
+        boolean setupCompleto = setupPrefs.getBoolean("setup_completo", false);
+        if (!setupCompleto) {
+            startActivity(new Intent(this, SetupWizardActivity.class));
+            finish();
+            return;
+        }
+
         // 1. Carrega o estado salvo imediatamente
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
@@ -95,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
 
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MeuAdminReceiver.class);
+
 
         tvLogo = findViewById(R.id.tvLogo);
         layoutSenha = findViewById(R.id.layoutSenha);

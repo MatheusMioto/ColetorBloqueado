@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚙ Configuração Inicial"
+            android:textColor="#E94560"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Siga os passos abaixo para ativar o Coletor Bloqueado."
+            android:textColor="#AAAACC"
+            android:textSize="14sp"
+            android:layout_marginBottom="28dp" />
+
+        <!-- PASSO 1 - Device Admin -->
+        <LinearLayout
+            android:id="@+id/cardPasso1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_setup_background"
+            android:padding="18dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:id="@+id/iconPasso1"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="1"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:background="@drawable/circle_step_background"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Administrador de Dispositivo"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/statusPasso1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Aguardando ativação..."
+                        android:textColor="#AAAACC"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnPasso1"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Ativar Administrador"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#E94560"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- PASSO 2 - Usage Stats -->
+        <LinearLayout
+            android:id="@+id/cardPasso2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_setup_background"
+            android:padding="18dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:id="@+id/iconPasso2"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="2"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:background="@drawable/circle_step_background"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Acesso a Uso de Apps"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/statusPasso2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Necessário para monitorar apps em uso"
+                        android:textColor="#AAAACC"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnPasso2"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Conceder Permissão"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#E94560"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- PASSO 3 - Device Owner -->
+        <LinearLayout
+            android:id="@+id/cardPasso3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_setup_background"
+            android:padding="18dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:id="@+id/iconPasso3"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="3"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:background="@drawable/circle_step_background"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Dono do Dispositivo"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/statusPasso3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Necessário para bloquear apps"
+                        android:textColor="#AAAACC"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Instrução ADB (visível apenas se não for Device Owner) -->
+            <LinearLayout
+                android:id="@+id/layoutAdbInstrucao"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Execute este comando no PC com o coletor conectado via USB:"
+                    android:textColor="#FFCC44"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/tvComandoAdb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="adb shell dpm set-device-owner com.brasil.coletorbloqueado/.MeuAdminReceiver"
+                    android:textColor="#33FF99"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace"
+                    android:background="#0A0A1A"
+                    android:padding="10dp"
+                    android:layout_marginBottom="8dp" />
+
+                <Button
+                    android:id="@+id/btnCopiarAdb"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="📋 Copiar Comando"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#2255AA"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Botão Finalizar -->
+        <Button
+            android:id="@+id/btnFinalizar"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="✓ Concluir Configuração"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#22AA55"
+            android:visibility="gone"
+            android:layout_marginTop="8dp" />
+
+        <!-- Mensagem de permissão faltando -->
+        <TextView
+            android:id="@+id/tvAvisoFaltando"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Complete todos os passos para continuar."
+            android:textColor="#FF6666"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+</ScrollView>
