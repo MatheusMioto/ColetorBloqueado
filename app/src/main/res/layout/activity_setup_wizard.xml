@@ -15,7 +15,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="⚙ Configuração Inicial"
+            android:text="&#9881; Configuração Inicial"
             android:textColor="#E94560"
             android:textSize="26sp"
             android:textStyle="bold"
@@ -29,7 +29,7 @@
             android:textSize="14sp"
             android:layout_marginBottom="28dp" />
 
-        <!-- PASSO 1 - Device Admin -->
+        <!-- PASSO 1 - Remover Conta Google -->
         <LinearLayout
             android:id="@+id/cardPasso1"
             android:layout_width="match_parent"
@@ -67,7 +67,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Administrador de Dispositivo"
+                        android:text="Remover Conta Google"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -76,23 +76,33 @@
                         android:id="@+id/statusPasso1"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Aguardando ativação..."
+                        android:text="Necessario para configurar como Dono do Dispositivo"
                         android:textColor="#AAAACC"
                         android:textSize="13sp" />
                 </LinearLayout>
             </LinearLayout>
 
+            <TextView
+                android:id="@+id/tvAvisoContaGoogle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Conta Google detectada! Remova-a antes de continuar."
+                android:textColor="#FFCC44"
+                android:textSize="13sp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/btnPasso1"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:text="Ativar Administrador"
+                android:text="Abrir Contas e Remover"
                 android:textColor="#FFFFFF"
                 android:backgroundTint="#E94560"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- PASSO 2 - Usage Stats -->
+        <!-- PASSO 2 - Device Admin -->
         <LinearLayout
             android:id="@+id/cardPasso2"
             android:layout_width="match_parent"
@@ -130,7 +140,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Acesso a Uso de Apps"
+                        android:text="Administrador de Dispositivo"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -139,7 +149,7 @@
                         android:id="@+id/statusPasso2"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Necessário para monitorar apps em uso"
+                        android:text="Aguardando ativacao..."
                         android:textColor="#AAAACC"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -149,13 +159,13 @@
                 android:id="@+id/btnPasso2"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:text="Conceder Permissão"
+                android:text="Ativar Administrador"
                 android:textColor="#FFFFFF"
                 android:backgroundTint="#E94560"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- PASSO 3 - Device Owner -->
+        <!-- PASSO 3 - Usage Stats -->
         <LinearLayout
             android:id="@+id/cardPasso3"
             android:layout_width="match_parent"
@@ -193,7 +203,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Dono do Dispositivo"
+                        android:text="Acesso a Uso de Apps"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -202,13 +212,76 @@
                         android:id="@+id/statusPasso3"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Necessário para bloquear apps"
+                        android:text="Necessario para monitorar apps em uso"
                         android:textColor="#AAAACC"
                         android:textSize="13sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Instrução ADB (visível apenas se não for Device Owner) -->
+            <Button
+                android:id="@+id/btnPasso3"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Conceder Permissao"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#E94560"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- PASSO 4 - Device Owner -->
+        <LinearLayout
+            android:id="@+id/cardPasso4"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_setup_background"
+            android:padding="18dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:id="@+id/iconPasso4"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="4"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:background="@drawable/circle_step_background"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Dono do Dispositivo"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/statusPasso4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Necessario para bloquear apps"
+                        android:textColor="#AAAACC"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Instrucao ADB (visivel apenas se nao for Device Owner) -->
             <LinearLayout
                 android:id="@+id/layoutAdbInstrucao"
                 android:layout_width="match_parent"
@@ -240,19 +313,19 @@
                     android:id="@+id/btnCopiarAdb"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
-                    android:text="📋 Copiar Comando"
+                    android:text="Copiar Comando"
                     android:textColor="#FFFFFF"
                     android:backgroundTint="#2255AA"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Botão Finalizar -->
+        <!-- Botao Finalizar -->
         <Button
             android:id="@+id/btnFinalizar"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:text="✓ Concluir Configuração"
+            android:text="Concluir Configuracao"
             android:textColor="#FFFFFF"
             android:textSize="16sp"
             android:textStyle="bold"
@@ -260,7 +333,7 @@
             android:visibility="gone"
             android:layout_marginTop="8dp" />
 
-        <!-- Mensagem de permissão faltando -->
+        <!-- Mensagem de permissao faltando -->
         <TextView
             android:id="@+id/tvAvisoFaltando"
             android:layout_width="match_parent"
