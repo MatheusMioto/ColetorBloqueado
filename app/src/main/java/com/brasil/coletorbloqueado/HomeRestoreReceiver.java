@@ -12,12 +12,44 @@ import android.util.Log;
 import java.util.List;
 
 /**
- * Receptor responsável por alterar ou restaurar o aplicativo Home padrão.
+ * Receiver responsável por definir ou restaurar o launcher (Home) padrão do dispositivo de forma
+ * persistente via {@link android.app.admin.DevicePolicyManager#addPersistentPreferredActivity}.
  *
- * Ações de Broadcast suportadas:
- *   Action: "com.brasil.coletorbloqueado.ACAO_DEFINIR_HOME_PADRAO"
- *   Extra:  "pacote" (String) - Opcional. O nome do pacote a ser definido como Home padrão (ex: "com.mobile.butler").
- *           Se omitido ou nulo, restaura o launcher padrão/original do sistema.
+ * <p>Esta classe garante que, mesmo após reinicializações do dispositivo, o launcher configurado
+ * permaneça como padrão sem exigir interação do usuário — algo impossível sem privilégios de
+ * Device Owner.</p>
+ *
+ * <h2>Broadcasts suportados</h2>
+ * <table border="1">
+ *   <tr><th>Action</th><th>Extra "pacote"</th><th>Efeito</th></tr>
+ *   <tr>
+ *     <td>{@code ACAO_DEFINIR_HOME_PADRAO}</td>
+ *     <td>Pacote do launcher destino (ex: {@code br.com.totvs.mobilebutler})</td>
+ *     <td>Define aquele launcher como Home padrão permanente</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code ACAO_DEFINIR_HOME_PADRAO}</td>
+ *     <td>{@code null} ou vazio</td>
+ *     <td>Remove qualquer regra persistente, deixando o Android decidir nativamente</td>
+ *   </tr>
+ *   <tr>
+ *     <td>{@code ACAO_RESTAURAR_HOME_PADRAO}</td>
+ *     <td>Ignorado</td>
+ *     <td>Remove regras persistentes e restaura o launcher padrão do sistema</td>
+ *   </tr>
+ * </table>
+ *
+ * <h2>Mecanismo de persistência</h2>
+ * <p>Usa {@link android.app.admin.DevicePolicyManager#addPersistentPreferredActivity} com um
+ * {@link android.content.IntentFilter} para {@link android.content.Intent#ACTION_MAIN} +
+ * {@link android.content.Intent#CATEGORY_HOME}. Isso faz o Android sempre abrir o launcher
+ * especificado quando o usuário pressiona Home, sem mostrar o seletor de apps.</p>
+ *
+ * <p><b>Pré-requisito:</b> O app deve ser Device Owner. Sem esse privilégio, todas as
+ * operações deste receiver falham silenciosamente com log de erro.</p>
+ *
+ * @see HomeChangerReceiver
+ * @see android.app.admin.DevicePolicyManager#addPersistentPreferredActivity
  */
 public class HomeRestoreReceiver extends BroadcastReceiver {
     private static final String TAG = "HomeRestoreReceiver";
@@ -102,7 +134,13 @@ public class HomeRestoreReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Busca a Home Activity (Launch activity com categoria HOME) para o pacote fornecido.
+     * Localiza a Activity que responde a intents de Home (ACTION_MAIN + CATEGORY_HOME) dentro
+     * do pacote especificado, para ser usada como destino da regra persistente do DPM.
+     *
+     * @param context     contexto da aplicação
+     * @param packageName nome do pacote do launcher (ex: {@code br.com.totvs.mobilebutler})
+     * @return {@link ComponentName} da Activity de Home do pacote, ou {@code null} se o pacote
+     *         não estiver instalado ou não declarar uma Activity de Home
      */
     private ComponentName getHomeActivityForPackage(Context context, String packageName) {
         PackageManager pm = context.getPackageManager();
@@ -118,7 +156,21 @@ public class HomeRestoreReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Busca o launcher original/padrão do sistema Android (que possui FLAG_SYSTEM).
+     * Localiza o launcher nativo do sistema Android (aquele que possui a flag
+     * {@link android.content.pm.ApplicationInfo#FLAG_SYSTEM}).
+     *
+     * <p>Usado como fallback para restaurar o launcher original quando nenhum launcher
+     * personalizado está configurado.</p>
+     *
+     * <p><b>Estratégia de busca:</b></p>
+     * <ol>
+     *   <li>Procura o primeiro launcher com {@code FLAG_SYSTEM} que não seja o próprio app.</li>
+     *   <li>Se não encontrar, retorna o primeiro launcher instalado que não seja o próprio app
+     *       (fallback genérico).</li>
+     * </ol>
+     *
+     * @param context contexto da aplicação
+     * @return {@link ComponentName} do launcher do sistema, ou {@code null} se nenhum for encontrado
      */
     private ComponentName getSystemLauncherActivity(Context context) {
         PackageManager pm = context.getPackageManager();

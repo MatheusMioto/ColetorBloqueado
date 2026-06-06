@@ -21,6 +21,48 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+/**
+ * Assistente de configuração inicial do ColetorBloqueado (4 passos).
+ *
+ * <p>Esta Activity é exibida automaticamente na primeira execução do app (quando a flag
+ * {@code setup_completo} nas SharedPreferences {@code ColetorBloqueadoPrefs} é {@code false}).
+ * Guia o administrador por cada pré-requisito necessário para o funcionamento completo do
+ * sistema de bloqueio.</p>
+ *
+ * <h2>Os 4 passos do setup</h2>
+ * <ol>
+ *   <li><b>Remover conta Google:</b> Obrigatório para que o DPM permita a definição de
+ *       Device Owner. O Android bloqueia {@code dpm set-device-owner} quando há contas
+ *       configuradas no dispositivo. O botão abre Configurações &gt; Contas com uma cascata
+ *       de 4 Intents de fallback para garantir compatibilidade com diferentes ROMs.</li>
+ *   <li><b>Ativar Device Admin:</b> Necessidade básica para qualquer operação de política.
+ *       Abre a tela nativa do Android para o usuário confirmar.</li>
+ *   <li><b>Permissão de Uso de Apps (PACKAGE_USAGE_STATS):</b> Necessária para o
+ *       {@link MonitoramentoService} detectar qual app está em foreground via
+ *       {@link android.app.usage.UsageStatsManager}. Abre {@code ACTION_USAGE_ACCESS_SETTINGS}.</li>
+ *   <li><b>Device Owner:</b> O privilégio mais alto. Não pode ser concedido via UI — exige
+ *       comando ADB executado uma única vez no PC. Esta Activity exibe e permite copiar
+ *       o comando exato. O status é verificado em {@link #onResume} a cada retorno.</li>
+ * </ol>
+ *
+ * <h2>Comportamento da UI</h2>
+ * <ul>
+ *   <li>Cada passo tem um ícone circular (verde = concluído, vermelho = pendente).</li>
+ *   <li>O botão "Finalizar" só aparece quando os passos 1, 2 e 3 estão concluídos.
+ *       O Device Owner (Passo 4) não bloqueia o setup pois pode ser feito depois.</li>
+ *   <li>O status de cada passo é reavaliado em cada {@link #onResume}, garantindo
+ *       que a UI reflita imediatamente as ações feitas em outras telas.</li>
+ * </ul>
+ *
+ * <h2>Fluxo de conclusão</h2>
+ * <p>Ao tocar em "Finalizar", a flag {@code setup_completo} é salva, o
+ * {@link MonitoramentoService} é iniciado e o usuário é redirecionado para {@link MainActivity}.
+ * Esta Activity não é mais exibida nas próximas inicializações.</p>
+ *
+ * @see MeuAdminReceiver
+ * @see MonitoramentoService
+ * @see MainActivity
+ */
 public class SetupWizardActivity extends AppCompatActivity {
 
     private static final String TAG = "SetupWizard";
@@ -103,6 +145,17 @@ public class SetupWizardActivity extends AppCompatActivity {
         tvAvisoFaltando = findViewById(R.id.tvAvisoFaltando);
     }
 
+    /**
+     * Avalia o estado atual de cada pré-requisito e atualiza a UI de todos os passos.
+     *
+     * <p>Chamado em {@link #onCreate} e em cada {@link #onResume} para garantir que os
+     * ícones e status estejam sempre atualizados quando o usuário retorna de outras telas
+     * (ex: após ativar o Device Admin ou remover a conta Google).</p>
+     *
+     * <p>A lógica de visibilidade do botão Finalizar é calculada aqui:
+     * {@code podeFinalizar = semContaGoogle && adminOk && usageOk}. O Device Owner (Passo 4)
+     * é mostrado, mas não bloqueia o setup, pois pode ser feito após o Finalizar.</p>
+     */
     private void atualizarStatus() {
         boolean semContaGoogle = !temContaGoogle();
         boolean adminOk = isDeviceAdmin();
@@ -158,6 +211,21 @@ public class SetupWizardActivity extends AppCompatActivity {
 
     // ── Acoes dos botoes ─────────────────────────────────────────────────────
 
+    // ── Acoes dos botoes ─────────────────────────────────────────────────────
+
+    /**
+     * Abre a tela de gerenciamento de contas do sistema usando uma cascata de Intents de fallback.
+     *
+     * <p>Diferentes fabricantes e versões do Android expoen Intents diferentes para a mesma
+     * função. A estratégia é tentar em ordem do mais específico para o mais genérico:</p>
+     * <ol>
+     *   <li>{@code android.settings.ACCOUNT_SYNC_SETTINGS}: Tela de Contas &amp; Sincronização (AOSP/Samsung/Motorola)</li>
+     *   <li>{@link android.provider.Settings#ACTION_SYNC_SETTINGS}: Tela geral de Contas (API 5+)</li>
+     *   <li>{@link android.provider.Settings#ACTION_ADD_ACCOUNT}: Seletor de tipo de conta (navegável)</li>
+     *   <li>{@link android.provider.Settings#ACTION_SETTINGS}: Configurações gerais (último recurso)</li>
+     * </ol>
+     * <p>Exibe um Toast orientando o operador sobre como remover a conta após abrir.</p>
+     */
     private void abrirGerenciadorContas() {
         // Tentativas em ordem de especificidade — a primeira que funcionar é usada
         Intent[] tentativas = new Intent[]{
@@ -191,6 +259,16 @@ public class SetupWizardActivity extends AppCompatActivity {
                 Toast.LENGTH_LONG).show();
     }
 
+    /**
+     * Abre a tela nativa do Android para ativar o Device Admin deste app.
+     *
+     * <p>Usa a Intent {@link android.app.admin.DevicePolicyManager#ACTION_ADD_DEVICE_ADMIN},
+     * que exibe uma dialog de confirmação ao usuário listando as políticas que o app
+     * solicita (conforme declarado em {@code res/xml/device_admin_policies.xml}).</p>
+     *
+     * <p>Após a confirmação pelo usuário, o {@link #onResume} é chamado e
+     * {@link #atualizarStatus} atualizará o Passo 2 para "concluído".</p>
+     */
     private void ativarDeviceAdmin() {
         Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
         intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
@@ -199,6 +277,16 @@ public class SetupWizardActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+    /**
+     * Abre a tela de Acesso ao Uso de Apps do sistema ({@link android.provider.Settings#ACTION_USAGE_ACCESS_SETTINGS}).
+     *
+     * <p>O operador deve localizar o app "Coletor Bloqueado" na lista e ativar manualmente
+     * a permissão. Sem ela, o {@link MonitoramentoService} não consegue detectar qual app
+     * está em foreground via {@link android.app.usage.UsageStatsManager}, e o bloqueio
+     * de apps não funciona.</p>
+     *
+     * <p>Um Toast orienta o operador sobre o que fazer na tela aberta.</p>
+     */
     private void abrirUsageStats() {
         startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
         Toast.makeText(this,
@@ -206,6 +294,18 @@ public class SetupWizardActivity extends AppCompatActivity {
                 Toast.LENGTH_LONG).show();
     }
 
+    /**
+     * Copia o comando ADB necessário para configurar o Device Owner para a área de transferência.
+     *
+     * <p>O comando copiado é:</p>
+     * <pre>adb shell dpm set-device-owner com.brasil.coletorbloqueado/.MeuAdminReceiver</pre>
+     *
+     * <p>Este comando deve ser executado <b>uma única vez</b> no PC com o coletor conectado
+     * via USB e a Depuração USB ativa. Requer que TODAS as contas de usuário tenham sido
+     * removidas do dispositivo antes (Passo 1 do setup).</p>
+     *
+     * <p>Alternativa automatizada: executar {@code .\scripts\setup_device_owner.ps1}.</p>
+     */
     private void copiarComandoAdb() {
         String comando = "adb shell dpm set-device-owner com.brasil.coletorbloqueado/.MeuAdminReceiver";
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -214,6 +314,20 @@ public class SetupWizardActivity extends AppCompatActivity {
         Toast.makeText(this, "Comando copiado! Cole no terminal do PC.", Toast.LENGTH_SHORT).show();
     }
 
+    /**
+     * Conclui o setup: persiste a flag de conclusão, inicia o serviço e navega para a MainActivity.
+     *
+     * <p>Esta método é chamado apenas quando {@code podeFinalizar == true} (ou seja, os passos
+     * 1, 2 e 3 estão concluídos). O Passo 4 (Device Owner) pode ser feito depois.</p>
+     *
+     * <p>Ações executadas:</p>
+     * <ol>
+     *   <li>Salva {@code setup_completo = true} nas SharedPreferences {@code ColetorBloqueadoPrefs}.</li>
+     *   <li>Inicia o {@link MonitoramentoService} em foreground.</li>
+     *   <li>Abre a {@link MainActivity} com a pilha limpa ({@code FLAG_ACTIVITY_CLEAR_TASK}).</li>
+     *   <li>Encerra esta Activity.</li>
+     * </ol>
+     */
     private void concluirSetup() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putBoolean(KEY_SETUP_COMPLETO, true).apply();
@@ -233,6 +347,19 @@ public class SetupWizardActivity extends AppCompatActivity {
 
     // ── Helpers visuais ──────────────────────────────────────────────────────
 
+    // ── Helpers visuais ──────────────────────────────────────────────────────
+
+    /**
+     * Aplica o estilo visual de "passo concluído" a um conjunto de views.
+     *
+     * <p>Define o ícone circular como verde com checkmark, o texto de status em verde-ciano,
+     * e desabilita o botão (se houver) com título "Concluído".</p>
+     *
+     * @param icon     TextView circular que exibe o ícone do passo
+     * @param status   TextView que exibe o texto descritivo do status
+     * @param btn      Button de ação do passo (pode ser {@code null} para o Passo 4)
+     * @param mensagem texto a ser exibido no {@code status}
+     */
     private void marcarPassoConcluido(TextView icon, TextView status, Button btn, String mensagem) {
         GradientDrawable circulo = new GradientDrawable();
         circulo.setShape(GradientDrawable.OVAL);
@@ -252,6 +379,18 @@ public class SetupWizardActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Aplica o estilo visual de "passo pendente" a um conjunto de views.
+     *
+     * <p>Define o ícone circular como vermelho, o texto de status em cinza e (opcionalmente)
+     * reabilita o botão com o texto de ação fornecido.</p>
+     *
+     * @param icon          TextView circular que exibe o ícone do passo
+     * @param status        TextView que exibe o texto descritivo do status
+     * @param btn           Button de ação do passo (pode ser {@code null})
+     * @param mensagemStatus texto explicativo do que está pendente
+     * @param textoBotao    texto do botão ({@code null} se o botão não existir no passo)
+     */
     private void marcarPassoPendente(TextView icon, TextView status, Button btn,
                                      String mensagemStatus, String textoBotao) {
         GradientDrawable circulo = new GradientDrawable();
@@ -273,6 +412,21 @@ public class SetupWizardActivity extends AppCompatActivity {
 
     // ── Verificacoes ─────────────────────────────────────────────────────────
 
+    // ── Verificacoes ─────────────────────────────────────────────────────────
+
+    /**
+     * Verifica se existem contas de usuário configuradas no dispositivo.
+     *
+     * <p>Prioriza a detecção de contas Google ({@code com.google}), pois são elas que
+     * tipicamente impedem o {@code dpm set-device-owner}. Retorna {@code true} se qualquer
+     * conta Google for encontrada.</p>
+     *
+     * <p><b>Nota:</b> contas de sistema como {@code com.android.*}, Xiaomi ({@code com.xiaomi})
+     * e Huawei ({@code com.huawei.hwid}) não são consideradas bloqueantes para fins deste check,
+     * mas podem estar presentes em dispositivos de marca.</p>
+     *
+     * @return {@code true} se houver pelo menos uma conta Google; {@code false} caso contrário
+     */
     private boolean temContaGoogle() {
         try {
             AccountManager am = AccountManager.get(this);
@@ -295,10 +449,24 @@ public class SetupWizardActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Verifica se o {@link MeuAdminReceiver} está ativo como Device Admin.
+     *
+     * @return {@code true} se o Device Admin estiver ativo; {@code false} caso contrário
+     */
     private boolean isDeviceAdmin() {
         return dpm.isAdminActive(adminComponent);
     }
 
+    /**
+     * Verifica se a permissão {@code GET_USAGE_STATS} (PACKAGE_USAGE_STATS) foi concedida.
+     *
+     * <p>Usa {@link android.app.AppOpsManager#checkOpNoThrow} para inspecionar o estado
+     * da operação sem lançar exceção. Retorna {@code true} apenas se o modo for
+     * {@link android.app.AppOpsManager#MODE_ALLOWED}.</p>
+     *
+     * @return {@code true} se a permissão de uso de apps estiver concedida
+     */
     private boolean isUsageStatsPermitido() {
         try {
             AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
@@ -310,6 +478,15 @@ public class SetupWizardActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Verifica se este app está configurado como Device Owner do dispositivo.
+     *
+     * <p>Device Owner é o privilégio máximo de gestão de dispositivo Android. Sem ele,
+     * as APIs mais importantes do sistema (suspensão de pacotes, desativação da barra
+     * de status, restrições de usuário) não ficam disponíveis.</p>
+     *
+     * @return {@code true} se o app for o Device Owner; {@code false} caso contrário
+     */
     private boolean isDeviceOwner() {
         return dpm.isDeviceOwnerApp(getPackageName());
     }

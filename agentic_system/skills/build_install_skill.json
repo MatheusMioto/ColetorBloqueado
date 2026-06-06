@@ -1,6 +1,13 @@
 {
   "name": "build_install_skill",
-  "description": "Compila o aplicativo Android ColetorBloqueado usando Gradle e realiza o deploy no dispositivo conectado usando ADB de forma automatizada.",
+  "version": "2.0.0",
+  "description": "Compila o aplicativo Android ColetorBloqueado usando Gradle Wrapper e realiza o deploy no dispositivo conectado via ADB de forma automatizada. Suporta variantes Debug e Release.",
+  "preconditions": [
+    "O Gradle Wrapper (gradlew.bat) deve estar presente na raiz do projeto.",
+    "O Android SDK deve estar instalado e a variável ANDROID_HOME deve estar configurada.",
+    "Para build Release: o arquivo de keystore 'coletorbloqueado.jks' deve estar na raiz do projeto.",
+    "Para instalação via ADB: ao menos um dispositivo deve estar listado em 'adb devices' com status 'device' (não 'unauthorized' ou 'offline')."
+  ],
   "parameters": {
     "type": "object",
     "properties": {
@@ -8,12 +15,22 @@
         "type": "string",
         "enum": ["assembleDebug", "assembleRelease"],
         "default": "assembleDebug",
-        "description": "A variante de build do Gradle a ser compilada."
+        "description": "A variante de build do Gradle a ser compilada. Use 'assembleRelease' para gerar o APK de produção assinado."
+      },
+      "adb_device_serial": {
+        "type": "string",
+        "description": "Serial do dispositivo ADB alvo (opcional). Se não fornecido, usa o único dispositivo conectado. Use 'adb devices' para obter o serial.",
+        "default": ""
       },
       "adb_flags": {
         "type": "string",
-        "default": "-r -t",
-        "description": "Flags passadas ao ADB para a instalação (ex: -r para substituir, -t para permitir APKs de teste)."
+        "default": "-r",
+        "description": "Flags passadas ao 'adb install'. '-r' substitui instalação existente. '-t' permite APKs de teste (necessário apenas para debug)."
+      },
+      "skip_install": {
+        "type": "boolean",
+        "default": false,
+        "description": "Se true, apenas compila o APK sem instalar no dispositivo. Útil para gerar o artefato para distribuição manual."
       }
     },
     "required": []
@@ -21,6 +38,60 @@
   "execution": {
     "type": "powershell",
     "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/build_and_install.ps1",
-    "working_directory": "."
+    "working_directory": ".",
+    "environment_variables": {
+      "BUILD_VARIANT": "{{build_variant}}",
+      "ADB_DEVICE_SERIAL": "{{adb_device_serial}}",
+      "ADB_FLAGS": "{{adb_flags}}",
+      "SKIP_INSTALL": "{{skip_install}}"
+    }
+  },
+  "returns": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["SUCCESS", "BUILD_FAILED", "INSTALL_FAILED", "NO_DEVICE"],
+        "description": "Status geral da operação."
+      },
+      "apk_path": {
+        "type": "string",
+        "description": "Caminho absoluto do APK gerado. Preenchido em caso de BUILD SUCCESS mesmo se install falhar."
+      },
+      "build_duration_seconds": {
+        "type": "number",
+        "description": "Tempo total de compilação em segundos."
+      },
+      "error_message": {
+        "type": "string",
+        "description": "Mensagem de erro detalhada. Vazio em caso de sucesso."
+      }
+    }
+  },
+  "error_codes": {
+    "BUILD_COMPILATION_ERROR": {
+      "description": "Erro de compilação Java/Kotlin. Verifique o arquivo e linha exatos na saída do Gradle.",
+      "resolution": "Solicite ao Developer Agent que analise e corrija o erro no arquivo apontado."
+    },
+    "BUILD_SDK_NOT_FOUND": {
+      "description": "Android SDK não encontrado. A variável ANDROID_HOME não está configurada.",
+      "resolution": "Configure ANDROID_HOME apontando para o diretório do Android SDK (ex: C:\\Users\\<user>\\AppData\\Local\\Android\\Sdk)."
+    },
+    "INSTALL_FAILED_ALREADY_EXISTS": {
+      "description": "APK com assinatura diferente já instalado no dispositivo.",
+      "resolution": "Remova o app com 'adb uninstall com.brasil.coletorbloqueado' e instale novamente."
+    },
+    "INSTALL_FAILED_UPDATE_INCOMPATIBLE": {
+      "description": "Versão incompatível detectada (downgrade ou assinatura diferente).",
+      "resolution": "Desinstale o app com 'adb uninstall com.brasil.coletorbloqueado' antes de reinstalar."
+    },
+    "NO_DEVICE_FOUND": {
+      "description": "Nenhum dispositivo conectado ou autorizado via ADB.",
+      "resolution": "Habilite a Depuração USB nas Opções do Desenvolvedor do dispositivo, conecte o cabo USB e autorize a chave RSA na tela do dispositivo."
+    },
+    "DEVICE_UNAUTHORIZED": {
+      "description": "Dispositivo detectado mas não autorizado (pendente de aprovação na tela).",
+      "resolution": "Aceite o diálogo de autorização de chave RSA que aparece na tela do dispositivo."
+    }
   }
 }

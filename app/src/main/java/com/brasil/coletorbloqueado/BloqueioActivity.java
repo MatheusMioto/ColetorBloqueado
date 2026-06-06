@@ -6,13 +6,37 @@ import android.os.Bundle;
 import android.util.Log;
 
 /**
- * Activity transparente de bloqueio.
+ * Activity transparente e efêmera usada como intermediária para forçar a troca de foreground
+ * de apps bloqueados de forma confiável em todas as versões e ROMs do Android.
  *
- * Técnica: quando o MonitoramentoService detecta Settings ou Play Store em foreground,
- * ele inicia esta Activity com FLAG_ACTIVITY_NEW_TASK. Ela recebe o foco (empurrando o
- * app bloqueado para background), depois lança o Home a partir de sua própria janela
- * visível — o que sempre funciona sem restrições de BAL (Background Activity Launch),
- * diferente de chamar startActivity() diretamente de um Service.
+ * <h2>Por que esta Activity existe?</h2>
+ *
+ * <p>A partir do Android 10 (API 29), o Android impôs restrições severas de BAL
+ * (Background Activity Launch), que impedem que serviços em background iniciem Activities
+ * diretamente em muitos cenários. Essa limitação tornaria inconsistente a interceptação de
+ * apps bloqueados pelo {@link MonitoramentoService}.</p>
+ *
+ * <p>A solução é usar esta Activity como "ponte": o {@link MonitoramentoService} a inicia
+ * com {@link Intent#FLAG_ACTIVITY_NEW_TASK}, o que é permitido mesmo de serviços. Uma vez
+ * que esta Activity está em foreground (visível), ela pode chamar {@code startActivity()} sem
+ * nenhuma restrição de BAL, pois parte de um contexto de Activity ativo.</p>
+ *
+ * <h2>Fluxo de execução</h2>
+ * <ol>
+ *   <li>{@link MonitoramentoService} detecta um app bloqueado em foreground.</li>
+ *   <li>O serviço inicia {@link SettingsPasswordActivity} diretamente com as flags corretas.</li>
+ *   <li>Se necessário usar esta Activity como intermediária para o launcher:
+ *       {@code BloqueioActivity} recebe o foco → inicia o Home → encerra a si mesma.</li>
+ * </ol>
+ *
+ * <h2>Características de design</h2>
+ * <ul>
+ *   <li><b>Transparente:</b> não infla nenhum layout — o tema no AndroidManifest deve ser
+ *       transparente ({@code Theme.Translucent.NoTitleBar}) para ser imperceptível ao usuário.</li>
+ *   <li><b>Efêmera:</b> chama {@link #finish()} imediatamente após redirecionar.</li>
+ *   <li><b>Não aparece no Recents:</b> o {@link MonitoramentoService} adiciona a flag
+ *       {@link Intent#FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS} ao iniciar esta Activity.</li>
+ * </ul>
  */
 public class BloqueioActivity extends Activity {
 
@@ -21,9 +45,19 @@ public class BloqueioActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Sem layout — esta activity é completamente transparente e efêmera
+        // Sem layout — esta Activity é completamente transparente e efêmera.
+        // Qualquer interface visual desnecessária quebraria a ilusão de invisibilidade.
     }
 
+    /**
+     * Ponto principal de ação. Chamado quando a Activity recebe o foco (foreground).
+     *
+     * <p>A partir daqui, o Android permite lançar qualquer Activity sem restrições de BAL,
+     * pois este código executa dentro de uma Activity visível ativa.</p>
+     *
+     * <p>Envia o usuário para o launcher padrão do dispositivo e encerra imediatamente
+     * para não poluir a pilha de activities (back stack) nem aparecer nos Recents.</p>
+     */
     @Override
     protected void onResume() {
         super.onResume();
@@ -37,7 +71,7 @@ public class BloqueioActivity extends Activity {
         homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(homeIntent);
 
-        // Encerra esta activity para não ficar na pilha de recentes
+        // Encerra esta Activity para não ficar na pilha de recentes
         finish();
     }
 }

@@ -1,13 +1,26 @@
 {
   "name": "setup_device_owner_skill",
-  "description": "Ativa o privilégio de administrador absoluto do dispositivo (Device Owner) no Android para o app ColetorBloqueado via ADB. Requer que não haja nenhuma conta de usuário pré-configurada no aparelho.",
+  "version": "2.0.0",
+  "description": "Ativa o privilégio de Device Owner (administrador absoluto) no Android para o app ColetorBloqueado via ADB. Este é um privilégio de alto nível que permite controle total sobre políticas do dispositivo, suspensão de apps, restrições de usuário e mais.",
+  "preconditions": [
+    "CRÍTICO: Nenhuma conta de usuário pode estar configurada no dispositivo (Google, Microsoft, WhatsApp, etc.). Remova TODAS as contas em Configurações > Contas antes de executar.",
+    "O app ColetorBloqueado deve estar instalado no dispositivo com o pacote 'com.brasil.coletorbloqueado'.",
+    "O dispositivo não pode já ter um Device Owner ativo. Verifique com: adb shell dpm list-owners",
+    "ADB deve ter acesso ao dispositivo com status 'device' em 'adb devices'.",
+    "O dispositivo não pode estar em modo de gerenciamento empresarial (Android for Work/Enterprise)."
+  ],
   "parameters": {
     "type": "object",
     "properties": {
       "target_component": {
         "type": "string",
         "default": "com.brasil.coletorbloqueado/.MeuAdminReceiver",
-        "description": "O componente DeviceAdminReceiver encarregado de receber os privilégios."
+        "description": "O componente DeviceAdminReceiver no formato 'pacote/ClasseReceiver' que receberá os privilégios de Device Owner."
+      },
+      "adb_device_serial": {
+        "type": "string",
+        "default": "",
+        "description": "Serial do dispositivo ADB alvo (opcional). Obtenha com 'adb devices'."
       }
     },
     "required": []
@@ -15,6 +28,46 @@
   "execution": {
     "type": "powershell",
     "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/setup_device_owner.ps1",
-    "working_directory": "."
+    "working_directory": ".",
+    "underlying_adb_command": "adb shell dpm set-device-owner com.brasil.coletorbloqueado/.MeuAdminReceiver"
+  },
+  "returns": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["SUCCESS", "FAILED_ACCOUNTS_PRESENT", "FAILED_ALREADY_OWNER", "FAILED_ADB_ERROR"],
+        "description": "Status da operação de provisionamento."
+      },
+      "is_device_owner": {
+        "type": "boolean",
+        "description": "true se o app agora é Device Owner após a execução."
+      },
+      "error_message": {
+        "type": "string",
+        "description": "Mensagem de erro retornada pelo DPM. Vazio em caso de sucesso."
+      }
+    }
+  },
+  "error_codes": {
+    "ACCOUNTS_PRESENT": {
+      "description": "Falha porque há contas de usuário ativas no dispositivo.",
+      "adb_output_contains": "Not allowed to set the device owner because there are already some accounts on the device",
+      "resolution": "Remova TODAS as contas em Configurações > Contas > [selecionar cada conta] > Remover conta. Execute 'adb shell pm list accounts' para verificar."
+    },
+    "ALREADY_HAS_DEVICE_OWNER": {
+      "description": "O dispositivo já possui um Device Owner configurado.",
+      "adb_output_contains": "There is already a device owner active",
+      "resolution": "Use a skill 'remove_device_owner_skill' para remover o proprietário atual antes de configurar um novo. ATENÇÃO: em builds Release isso pode exigir Factory Reset."
+    },
+    "COMPONENT_NOT_FOUND": {
+      "description": "O componente DeviceAdminReceiver especificado não foi encontrado no dispositivo.",
+      "adb_output_contains": "component must be a registered device admin",
+      "resolution": "Verifique se o app está instalado e se o MeuAdminReceiver está declarado corretamente no AndroidManifest.xml."
+    },
+    "USB_DEBUGGING_REQUIRED": {
+      "description": "O comando DPM requer que a Depuração USB esteja ativa.",
+      "resolution": "Ative a Depuração USB em Configurações > Opções do desenvolvedor."
+    }
   }
 }

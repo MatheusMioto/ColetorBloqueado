@@ -25,15 +25,42 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Foreground Service responsável por realizar o monitoramento contínuo dos aplicativos executados
+ * em foreground e impor políticas de restrição de acesso e bloqueio no coletor.
+ *
+ * <p>O serviço executa em segundo plano com uma notificação persistente (Foreground Service)
+ * e roda um loop periódico a cada 500ms para verificar qual aplicativo está ativo na tela.
+ * Se o aplicativo em foreground for bloqueado (não estiver na whitelist e não for um app
+ * do sistema permitido), o serviço inicia a {@link SettingsPasswordActivity} para cobrir
+ * a tela e solicitar a senha administrativa.</p>
+ *
+ * <p>Este serviço também gerencia o temporizador do modo de manutenção, cancelando o modo
+ * automaticamente ao expirar o tempo definido.</p>
+ *
+ * <p><b>Privilégios requeridos:</b>
+ * Para funcionar corretamente, o app precisa estar definido como Device Owner e possuir a permissão
+ * {@code android.permission.PACKAGE_USAGE_STATS} concedida.</p>
+ */
 public class MonitoramentoService extends Service {
     private static final String TAG = "MonitoramentoService";
     private static final String CHANNEL_ID = "MonitoramentoServiceChannel";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
 
+    /**
+     * Map estático contendo os pacotes que foram temporariamente liberados via inserção de senha correta.
+     * <p>A chave é o nome do pacote e o valor é o timestamp (System.currentTimeMillis()) em que foi desbloqueado.</p>
+     * <p>Esses pacotes permanecem desbloqueados por uma janela de 30 segundos.</p>
+     */
     public static final java.util.Map<String, Long> unlockedPackages = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /**
+     * Runnable executado periodicamente a cada 500ms para gerenciar o timer de manutenção
+     * e validar se o aplicativo em foreground deve ser bloqueado.
+     */
     private final Runnable verificadorRunnable = new Runnable() {
         @Override
         public void run() {
@@ -43,6 +70,12 @@ public class MonitoramentoService extends Service {
         }
     };
 
+    /**
+     * BroadcastReceiver registrado dinamicamente para escutar o desligamento do sistema.
+     * <p>Como fail-safe, quando o dispositivo é desligado, todos os aplicativos fora da whitelist
+     * são suspensos imediatamente para evitar que iniciem desbloqueados no próximo boot antes
+     * que este serviço consiga inicializar.</p>
+     */
     private final android.content.BroadcastReceiver shutdownReceiver = new android.content.BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -113,6 +146,10 @@ public class MonitoramentoService extends Service {
         handler.post(verificadorRunnable);
     }
 
+    /**
+     * Aplica o bloqueio silencioso corporativo via restrições do DevicePolicyManager (DPM).
+     * Desabilita a barra de status e bloqueia instalação e desinstalação de aplicativos.
+     */
     private void aplicarBloqueioSilencioso() {
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
@@ -126,6 +163,10 @@ public class MonitoramentoService extends Service {
         }
     }
 
+    /**
+     * Remove o bloqueio de manutenção no dispositivo.
+     * Reabilita a barra de status e remove restrições de instalação/desinstalação de apps.
+     */
     private void liberarBloqueioSilencioso() {
         if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
             try {
@@ -139,6 +180,13 @@ public class MonitoramentoService extends Service {
         }
     }
 
+    /**
+     * Altera o estado de suspensão dos aplicativos que não estão na whitelist.
+     * <p>Caso {@code suspended} seja true, os aplicativos fora da whitelist são marcados como suspensos,
+     * impedindo sua execução pelo usuário e desbotando seu ícone no launcher. A Play Store também é ocultada.</p>
+     *
+     * @param suspended true para suspender e ocultar os aplicativos não autorizados, false para liberá-los.
+     */
     public void setAppsSuspended(boolean suspended) {
         if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) return;
 
@@ -186,6 +234,11 @@ public class MonitoramentoService extends Service {
         }
     }
 
+    /**
+     * Obtém o conjunto de pacotes de launchers instalados no dispositivo.
+     *
+     * @return Conjunto contendo os pacotes que respondem à intent de Home.
+     */
     private Set<String> getLauncherPackages() {
         Set<String> launchers = new HashSet<>();
         PackageManager pm = getPackageManager();
@@ -239,6 +292,12 @@ public class MonitoramentoService extends Service {
         }
     }
 
+    /**
+     * Verifica se o pacote fornecido deve ser bloqueado com base nas regras de whitelist e exceções do sistema.
+     *
+     * @param packageName Nome do pacote a ser verificado.
+     * @return true se o aplicativo for bloqueado, false se for permitido.
+     */
     private boolean isPackageBlocked(String packageName) {
         if (packageName == null) return false;
         if (packageName.equals(getPackageName())) return false; // Nosso app
@@ -259,6 +318,11 @@ public class MonitoramentoService extends Service {
         return true;
     }
 
+    /**
+     * Valida o temporizador de expiração do Modo Manutenção.
+     * <p>Caso a expiração esteja configurada e o horário atual seja superior ao tempo limite,
+     * finaliza o modo manutenção, aplica as restrições novamente e dispara o broadcast de expiração.</p>
+     */
     private void verificarTimerManutencao() {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         boolean modoManutencaoAtivo = pref.getBoolean("modoManutencaoAtivo", false);
@@ -281,6 +345,12 @@ public class MonitoramentoService extends Service {
         }
     }
 
+    /**
+     * Analisa o estado atual de bloqueio do coletor.
+     * <p>Se o coletor não estiver em modo manutenção ou trocando de launcher, busca qual pacote
+     * está atualmente em foreground. Se este pacote estiver bloqueado e não estiver na janela de 30s
+     * de liberação temporária, inicia a {@link SettingsPasswordActivity} para interceptá-lo.</p>
+     */
     private void verificarConfiguracoesBloqueio() {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         if (pref.getBoolean("modoManutencaoAtivo", false)) {
@@ -321,10 +391,14 @@ public class MonitoramentoService extends Service {
      * Consulta eventos ACTIVITY_RESUMED nos últimos 2 minutos e retorna o pacote do
      * último evento encontrado — que corresponde ao app efetivamente ativo na tela agora.
      *
-     * Vantagens sobre queryUsageStats(INTERVAL_DAILY):
-     * - ACTIVITY_RESUMED é disparado no instante exato em que o app vai para foreground
-     * - Não depende de lastTimeUsed agregado, que pode apontar para apps não-ativos
-     * - A janela de 2 min cobre atrasos de boot sem retornar apps de sessões anteriores
+     * <p><b>Vantagens sobre queryUsageStats(INTERVAL_DAILY):</b></p>
+     * <ul>
+     *   <li>ACTIVITY_RESUMED é disparado no instante exato em que o app vai para foreground</li>
+     *   <li>Não depende de lastTimeUsed agregado, que pode apontar para apps não-ativos</li>
+     *   <li>A janela de 2 min cobre atrasos de boot sem retornar apps de sessões anteriores</li>
+     * </ul>
+     *
+     * @return O nome do pacote do aplicativo atualmente em foreground, ou null se não detectado.
      */
     private String getForegroundPackage() {
         UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
@@ -349,6 +423,9 @@ public class MonitoramentoService extends Service {
         return lastForeground;
     }
 
+    /**
+     * Cria o canal de notificação exigido pelo Android 8.0+ para rodar o serviço em foreground.
+     */
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(

@@ -1,13 +1,34 @@
 # build_and_install.ps1
-# Script para compilar e instalar o app ColetorBloqueado via PowerShell de forma não-interativa.
+# Compila e instala o ColetorBloqueado via Gradle + ADB.
+# Variaveis de ambiente suportadas:
+#   BUILD_VARIANT      assembleDebug | assembleRelease  (default: assembleDebug)
+#   ADB_FLAGS          flags do adb install             (default: -r)
+#   SKIP_INSTALL       true | false                     (default: false)
+#   ADB_DEVICE_SERIAL  serial do dispositivo            (default: vazio = unico conectado)
+
+param(
+    [string]$BuildVariant  = "assembleDebug",
+    [string]$AdbFlags      = "-r",
+    [string]$SkipInstall   = "false",
+    [string]$DeviceSerial  = ""
+)
+
+# Sobrescreve com variaveis de ambiente se definidas
+if ($env:BUILD_VARIANT)      { $BuildVariant = $env:BUILD_VARIANT }
+if ($env:ADB_FLAGS)          { $AdbFlags     = $env:ADB_FLAGS }
+if ($env:SKIP_INSTALL)       { $SkipInstall  = $env:SKIP_INSTALL }
+if ($env:ADB_DEVICE_SERIAL)  { $DeviceSerial = $env:ADB_DEVICE_SERIAL }
 
 $ErrorActionPreference = "Stop"
+$StartTime = Get-Date
 
-function Ensure-Adb {
-    if (Get-Command "adb" -ErrorAction SilentlyContinue) {
-        return
-    }
-    Write-Host "adb nao encontrado no PATH. Tentando localizar o SDK do Android automaticamente..." -ForegroundColor Yellow
+function Write-Step([string]$msg) { Write-Host "" ; Write-Host "[$([datetime]::Now.ToString('HH:mm:ss'))] $msg" -ForegroundColor Cyan }
+function Write-Ok([string]$msg)   { Write-Host "  OK: $msg" -ForegroundColor Green }
+function Write-Bad([string]$msg)  { Write-Host "  ERRO: $msg" -ForegroundColor Red }
+function Write-Info([string]$msg) { Write-Host "  >> $msg" -ForegroundColor Gray }
+
+function Find-Adb {
+    if (Get-Command "adb" -ErrorAction SilentlyContinue) { return "adb" }
     $candidates = @(
         $env:ANDROID_HOME,
         $env:ANDROID_SDK_ROOT,
@@ -15,48 +36,112 @@ function Ensure-Adb {
         "$env:USERPROFILE\AppData\Local\Android\Sdk",
         "C:\Android\sdk"
     )
-    foreach ($path in $candidates) {
-        if (-not [string]::IsNullOrEmpty($path) -and (Test-Path "$path\platform-tools\adb.exe")) {
-            $adbDir = "$path\platform-tools"
-            Write-Host "Android SDK encontrado em: $path" -ForegroundColor Green
-            Write-Host "Adicionando temporariamente ao PATH: $adbDir" -ForegroundColor Green
-            $env:PATH = "$adbDir;$env:PATH"
-            return
+    foreach ($basePath in $candidates) {
+        if (-not [string]::IsNullOrEmpty($basePath)) {
+            $adbExe = "$basePath\platform-tools\adb.exe"
+            if (Test-Path $adbExe) {
+                $env:PATH = "$basePath\platform-tools;$env:PATH"
+                Write-Info "ADB encontrado em: $adbExe"
+                return "adb"
+            }
         }
     }
-    Write-Error "Nao foi possivel encontrar o 'adb'. Por favor, certifique-se de que o SDK do Android esta instalado e defina a variavel de ambiente ANDROID_HOME ou adicione o diretorio 'platform-tools' ao PATH do sistema."
+    Write-Bad "ADB nao encontrado. Configure ANDROID_HOME ou adicione platform-tools ao PATH."
+    exit 1
 }
 
-Ensure-Adb
-
-Write-Host "Iniciando compilacao do projeto com Gradle..." -ForegroundColor Cyan
-if (Test-Path ".\gradlew.bat") {
-    $gradlew = ".\gradlew.bat"
-} elseif (Test-Path "..\gradlew.bat") {
-    $gradlew = "..\gradlew.bat"
-} else {
-    Write-Error "Arquivo gradlew.bat nao encontrado. Certifique-se de que esta na raiz do projeto ou no diretorio scripts."
+function Get-AdbBaseArgs {
+    if ($DeviceSerial -ne "") { return @("-s", $DeviceSerial) }
+    return @()
 }
 
-# Executa compilacao
-& $gradlew assembleDebug
-
-Write-Host "Compilacao concluida com sucesso. Verificando APK..." -ForegroundColor Green
-$apkPath = "app\build\outputs\apk\debug\app-debug.apk"
-if (-not (Test-Path $apkPath)) {
-    $apkPath = "..\app\build\outputs\apk\debug\app-debug.apk"
-    if (-not (Test-Path $apkPath)) {
-        Write-Error "APK nao encontrado em $apkPath."
+function Find-Gradlew {
+    foreach ($candidate in @(".\gradlew.bat", "..\gradlew.bat")) {
+        if (Test-Path $candidate) { return $candidate }
     }
+    Write-Bad "gradlew.bat nao encontrado. Execute a partir da raiz do projeto."
+    exit 1
 }
 
-Write-Host "Verificando dispositivos conectados via ADB..." -ForegroundColor Cyan
-$devices = adb devices | Select-String -Pattern "\bdevice\b"
-if ($devices.Count -eq 0) {
-    Write-Error "Nenhum dispositivo Android conectado via ADB."
+function Get-ApkPath([string]$variant) {
+    $isRelease = $variant -match "Release"
+    $subdir    = if ($isRelease) { "release" } else { "debug" }
+    $filename  = if ($isRelease) { "app-release.apk" } else { "app-debug.apk" }
+    foreach ($base in @(".", "..")) {
+        $p = "$base\app\build\outputs\apk\$subdir\$filename"
+        if (Test-Path $p) { return (Resolve-Path $p).Path }
+    }
+    return $null
 }
 
-Write-Host "Instalando APK no dispositivo..." -ForegroundColor Cyan
-adb install -r -t $apkPath
+# --- 1. ADB ---
+Write-Step "Verificando ADB..."
+$adb = Find-Adb
+Write-Ok "ADB disponivel"
+$baseArgs = Get-AdbBaseArgs
 
-Write-Host "Instalacao concluida com sucesso!" -ForegroundColor Green
+# --- 2. Compilar ---
+Write-Step "Compilando: $BuildVariant"
+$gradlew = Find-Gradlew
+$buildStart = Get-Date
+& $gradlew $BuildVariant
+$buildDuration = [int]((Get-Date) - $buildStart).TotalSeconds
+if ($LASTEXITCODE -ne 0) {
+    Write-Bad "BUILD FALHOU (codigo $LASTEXITCODE)"
+    exit $LASTEXITCODE
+}
+Write-Ok "BUILD SUCCESSFUL em ${buildDuration}s"
+
+# --- 3. Localizar APK ---
+Write-Step "Localizando APK gerado..."
+$apkPath = Get-ApkPath $BuildVariant
+if (-not $apkPath) {
+    Write-Bad "APK nao encontrado apos o build."
+    exit 1
+}
+Write-Ok "APK: $apkPath"
+
+# --- 4. Skip install? ---
+if ($SkipInstall -eq "true") {
+    Write-Info "SKIP_INSTALL=true. Instalacao ignorada."
+    Write-Ok "APK disponivel em: $apkPath"
+    exit 0
+}
+
+# --- 5. Verificar dispositivo ---
+Write-Step "Verificando dispositivos ADB..."
+$deviceLines = & $adb @baseArgs devices 2>&1
+$connected = $deviceLines | Where-Object { $_ -match "\bdevice$" }
+if (-not $connected) {
+    Write-Bad "Nenhum dispositivo Android conectado ou autorizado."
+    Write-Info "1. Conecte o cabo USB"
+    Write-Info "2. Ative Depuracao USB nas Opcoes do Desenvolvedor"
+    Write-Info "3. Autorize a chave RSA na tela do dispositivo"
+    exit 1
+}
+Write-Ok "$($connected.Count) dispositivo(s) pronto(s)"
+
+# --- 6. Instalar APK ---
+Write-Step "Instalando APK..."
+Write-Info "Flags: $AdbFlags"
+$flagList = $AdbFlags.Split(" ") + @($apkPath)
+$installOut = & $adb @baseArgs install @flagList 2>&1
+Write-Host $installOut
+
+if ($installOut -match "Success") {
+    Write-Ok "Instalacao concluida!"
+} elseif ($installOut -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+    Write-Bad "Assinatura incompativel com APK instalado."
+    Write-Info "Execute: adb uninstall com.brasil.coletorbloqueado"
+    exit 1
+} else {
+    Write-Bad "Falha na instalacao."
+    exit 1
+}
+
+# --- Relatorio ---
+$total = [int]((Get-Date) - $StartTime).TotalSeconds
+Write-Step "Concluido!"
+Write-Ok "Variante : $BuildVariant"
+Write-Ok "APK      : $apkPath"
+Write-Ok "Duracao  : ${total}s"

@@ -1,6 +1,12 @@
 {
   "name": "remove_device_owner_skill",
-  "description": "Limpa os dados do aplicativo e tenta remover o status de administrador de dispositivo (Active Admin) via ADB. Útil para limpar o estado em emuladores e aparelhos de teste.",
+  "version": "2.0.0",
+  "description": "Remove os privilégios de Device Owner e Device Admin do app ColetorBloqueado. ATENÇÃO: em builds de produção (Release assinadas), a remoção via ADB é bloqueada pelo Android por segurança. Use apenas em builds Debug ou para reset de ambiente de testes.",
+  "preconditions": [
+    "O dispositivo deve estar conectado via ADB com status 'device'.",
+    "AVISO DE PRODUÇÃO: Esta skill funciona completamente apenas em builds de Debug. Em builds Release, a remoção do Device Owner requer Factory Reset ou que o próprio app chame 'dpm.clearDeviceOwnerApp()' internamente.",
+    "Tenha certeza de que esta ação é intencional — o dispositivo ficará desprotegido após a remoção."
+  ],
   "parameters": {
     "type": "object",
     "properties": {
@@ -8,6 +14,16 @@
         "type": "string",
         "default": "com.brasil.coletorbloqueado",
         "description": "O ID do pacote do aplicativo cuja administração será removida."
+      },
+      "clear_app_data": {
+        "type": "boolean",
+        "default": true,
+        "description": "Se true, limpa todos os dados do app (SharedPreferences, whitelist, senha) após remover o Device Owner. Útil para reset completo do ambiente de teste."
+      },
+      "adb_device_serial": {
+        "type": "string",
+        "default": "",
+        "description": "Serial do dispositivo ADB alvo (opcional)."
       }
     },
     "required": []
@@ -15,6 +31,47 @@
   "execution": {
     "type": "powershell",
     "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/remove_device_owner.ps1",
-    "working_directory": "."
+    "working_directory": ".",
+    "underlying_adb_commands": [
+      "adb shell pm clear com.brasil.coletorbloqueado",
+      "adb shell dpm remove-active-admin com.brasil.coletorbloqueado/.MeuAdminReceiver"
+    ]
+  },
+  "returns": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["SUCCESS", "FAILED_PRODUCTION_BUILD", "FAILED_NOT_ADMIN", "FAILED_ADB_ERROR"],
+        "description": "Status da operação de remoção."
+      },
+      "data_cleared": {
+        "type": "boolean",
+        "description": "true se os dados do app foram limpos com sucesso."
+      },
+      "admin_removed": {
+        "type": "boolean",
+        "description": "true se o perfil de administrador foi removido com sucesso."
+      },
+      "error_message": {
+        "type": "string",
+        "description": "Mensagem de erro detalhada. Vazio em caso de sucesso."
+      }
+    }
+  },
+  "error_codes": {
+    "PRODUCTION_BUILD_RESTRICTION": {
+      "description": "A remoção do Device Owner via ADB é bloqueada em builds de produção pelo Android Security Model.",
+      "adb_output_contains": "java.lang.SecurityException",
+      "resolution": "Opção 1: Faça Factory Reset do dispositivo (Configurações > Redefinir > Dados de fábrica). Opção 2: Compile uma build de Debug e instale via ADB. Opção 3: Adicione um mecanismo interno no app para chamar 'dpm.clearDeviceOwnerApp()' em modo especial de fábrica."
+    },
+    "NOT_ACTIVE_ADMIN": {
+      "description": "O componente especificado não é um administrador ativo no dispositivo.",
+      "resolution": "Verifique o status atual com: 'adb shell dumpsys device_policy | grep -A5 admin'"
+    },
+    "PACKAGE_NOT_FOUND": {
+      "description": "O pacote do app não foi encontrado no dispositivo.",
+      "resolution": "Verifique se o app está instalado com: 'adb shell pm list packages | grep coletorbloqueado'"
+    }
   }
 }

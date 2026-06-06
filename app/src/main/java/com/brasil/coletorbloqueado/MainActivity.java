@@ -43,13 +43,39 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Activity principal do aplicativo ColetorBloqueado.
+ *
+ * <p>Esta Activity atua como o painel de controle administrativo do coletor e também como
+ * a tela que decide se o app deve se ocultar (ir para background) ou permanecer em exibição.</p>
+ *
+ * <p><b>Comportamento de Ocultação Automática:</b></p>
+ * <p>Se o setup inicial do app já foi realizado (SetupWizard completado) e o coletor
+ * NÃO estiver em modo de manutenção, a MainActivity invoca {@link #moveTaskToBack(true)}
+ * no seu {@code onCreate()} para minimizar-se de forma invisível para o usuário, deixando o
+ * {@link MonitoramentoService} rodando em segundo plano para interceptar aplicativos.</p>
+ *
+ * <p><b>Modo Manutenção:</b></p>
+ * <p>Quando o administrador digita a senha mestre correta, o app entra em Modo Manutenção.
+ * Neste modo, as restrições do Device Owner são suspensas temporariamente e o administrador
+ * pode configurar o timer de expiração da manutenção, gerenciar a whitelist de aplicativos
+ * liberados e alterar a senha administrativa.</p>
+ */
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private DevicePolicyManager dpm;
     private ComponentName adminComponent;
-    // Senha padrão pré-setada foi removida para exigir a configuração na primeira inicialização.
+    
+    /**
+     * Flag indicando se o modo de manutenção está ativado no momento.
+     */
     private boolean modoManutencaoAtivo = false;
+
+    /**
+     * Flag global usada para suspender temporariamente o monitoramento de foreground
+     * do {@link MonitoramentoService} enquanto ocorre a transição de troca de launcher.
+     */
     public static boolean isChangingHome = false;
 
     private LinearLayout layoutSenha, layoutWhitelist, layoutTimer;
@@ -59,6 +85,11 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView tvTimerRestante;
     private final android.os.Handler timerHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /**
+     * Runnable responsável por atualizar dinamicamente a cada 1 segundo o tempo restante
+     * do modo manutenção na interface gráfica do usuário.
+     */
     private final Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
@@ -67,6 +98,10 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    /**
+     * Receiver que escuta a expiração do temporizador de manutenção disparado pelo serviço
+     * de monitoramento em background. Encerra a manutenção imediatamente ao receber o evento.
+     */
     private final android.content.BroadcastReceiver manutencaoExpiradaReceiver = new android.content.BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -105,7 +140,6 @@ public class MainActivity extends AppCompatActivity {
         dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         adminComponent = new ComponentName(this, MeuAdminReceiver.class);
 
-
         tvLogo = findViewById(R.id.tvLogo);
         layoutSenha = findViewById(R.id.layoutSenha);
         layoutWhitelist = findViewById(R.id.layoutWhitelist);
@@ -114,7 +148,6 @@ public class MainActivity extends AppCompatActivity {
         btnEncerrar = findViewById(R.id.btnEncerrar);
         btnGerenciarWhitelist = findViewById(R.id.btnGerenciarWhitelist);
         btnAlterarSenha = findViewById(R.id.btnAlterarSenha);
-
 
         layoutTimer = findViewById(R.id.layoutTimer);
         btnConfigurarTimer = findViewById(R.id.btnConfigurarTimer);
@@ -145,8 +178,6 @@ public class MainActivity extends AppCompatActivity {
         btnGerenciarWhitelist.setOnClickListener(v -> mostrarDialogoListaApps());
         btnAlterarSenha.setOnClickListener(v -> mostrarDialogoAlterarSenha());
 
-
-
         // Inicia o serviço de background
         Intent serviceIntent = new Intent(this, MonitoramentoService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -171,6 +202,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Exibe o diálogo interativo de gerenciamento da Whitelist de aplicativos.
+     * <p>Permite filtrar os aplicativos instalados nas abas "Bloqueados" (fora da whitelist)
+     * e "Liberados" (na whitelist), além de realizar pesquisas por texto e limpar toda a whitelist.</p>
+     */
     private void mostrarDialogoListaApps() {
         PackageManager pm = getPackageManager();
 
@@ -327,6 +363,11 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    /**
+     * Obtém os pacotes correspondentes aos Launchers instalados no dispositivo.
+     *
+     * @return Set contendo strings com os pacotes dos launchers.
+     */
     private Set<String> getLauncherPackages() {
         Set<String> launchers = new HashSet<>();
         PackageManager pm = getPackageManager();
@@ -341,6 +382,11 @@ public class MainActivity extends AppCompatActivity {
         return launchers;
     }
 
+    /**
+     * Aplica o launcher preferido configurado via restrições persistentes do Device Owner.
+     * <p>Caso não exista launcher preferido salvo nas SharedPreferences, limpa as atividades preferidas
+     * persistentes para deixar o Android decidir nativamente.</p>
+     */
     private void aplicarHomeConfigurada() {
         if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) {
             return;
@@ -379,6 +425,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Busca a Home Activity correspondente a um determinado nome de pacote.
+     *
+     * @param packageName O nome do pacote do launcher de destino.
+     * @return O ComponentName do launcher ou null se não encontrado.
+     */
     private ComponentName getHomeActivityForPackage(String packageName) {
         PackageManager pm = getPackageManager();
         Intent intent = new Intent(Intent.ACTION_MAIN);
@@ -392,6 +444,11 @@ public class MainActivity extends AppCompatActivity {
         return null;
     }
 
+    /**
+     * Localiza a Activity do launcher padrão do sistema que não seja este aplicativo.
+     *
+     * @return O ComponentName do launcher do sistema correspondente, ou null.
+     */
     private ComponentName getSystemLauncherActivity() {
         PackageManager pm = getPackageManager();
         Intent intent = new Intent(Intent.ACTION_MAIN);
@@ -423,6 +480,11 @@ public class MainActivity extends AppCompatActivity {
         return null;
     }
 
+    /**
+     * Adiciona um pacote de aplicativo à Whitelist.
+     *
+     * @param packageName O pacote do aplicativo a ser liberado.
+     */
     private void adicionarAppWhitelist(String packageName) {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
@@ -435,6 +497,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Remove um pacote de aplicativo da Whitelist.
+     *
+     * @param packageName O pacote do aplicativo a ser bloqueado.
+     */
     private void removerAppWhitelist(String packageName) {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         Set<String> whitelist = new HashSet<>(pref.getStringSet("whitelist", new HashSet<>()));
@@ -447,6 +514,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Limpa completamente a whitelist de aplicativos liberados nas SharedPreferences.
+     */
     private void limparWhitelist() {
         getSharedPreferences("Configuracoes", MODE_PRIVATE).edit().remove("whitelist").apply();
         Toast.makeText(this, "Whitelist limpa!", Toast.LENGTH_SHORT).show();
@@ -482,6 +552,11 @@ public class MainActivity extends AppCompatActivity {
         stopTimerUpdates();
     }
 
+    /**
+     * Aplica ou remove restrições e políticas de segurança no coletor.
+     * <p>Caso não esteja em Modo Manutenção: desabilita a barra de status e bloqueia instalação/desinstalação.</p>
+     * <p>Caso esteja em Modo Manutenção: reabilita a barra de status e remove todas as restrições.</p>
+     */
     private void aplicarTravasDoSistema() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
@@ -516,6 +591,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Altera o estado de suspensão de todos os pacotes corporativos fora da whitelist.
+     *
+     * @param suspended true para suspender e ocultar aplicativos, false para liberá-los.
+     */
     private void setAppsSuspended(boolean suspended) {
         if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) return;
 
@@ -559,6 +639,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Calcula o hash SHA-256 de uma String informada.
+     *
+     * @param input A String a ser criptografada.
+     * @return O hash em formato hexadecimal.
+     */
     private String calcularSHA256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -576,6 +662,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Valida a senha informada pelo usuário.
+     * <p>Caso a senha esteja correta, ativa o modo manutenção no dispositivo e configura
+     * o timer de expiração para o padrão inicial de 5 minutos.</p>
+     *
+     * @param senhaDigitada A senha fornecida pelo administrador.
+     */
     public void verificarSenhaManutencao(String senhaDigitada) {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         String senhaSalvaHash = pref.getString("senha_mestre_hash", null);
@@ -618,6 +711,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Exibe o diálogo para alteração de senha de acesso.
+     * Exige a senha antiga correspondente antes de salvar a nova.
+     */
     private void mostrarDialogoAlterarSenha() {
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_alterar_senha, null);
         EditText etSenhaAntiga = dialogView.findViewById(R.id.etSenhaAntiga);
@@ -674,6 +771,9 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    /**
+     * Exibe o diálogo inicial para definição da senha de acesso administrativa (primeiro uso).
+     */
     private void mostrarDialogoDefinirSenha() {
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_definir_senha, null);
         EditText etSenhaNova = dialogView.findViewById(R.id.etSenhaNova);
@@ -720,6 +820,11 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    /**
+     * Encerra o Modo Manutenção no coletor.
+     * <p>Retorna as travas de Device Owner, desativa o timer visual, limpa a expiração do timer
+     * nas SharedPreferences e minimiza o aplicativo de volta para background.</p>
+     */
     public void encerrarManutencao() {
         modoManutencaoAtivo = false;
         stopTimerUpdates();
@@ -747,6 +852,10 @@ public class MainActivity extends AppCompatActivity {
         moveTaskToBack(true);
     }
 
+    /**
+     * Configura o comportamento do botão de timer da interface gráfica
+     * e inicia as atualizações dinâmicas do contador.
+     */
     private void configurarUITimerEIniciar() {
         btnConfigurarTimer.setOnClickListener(v -> {
             SharedPreferences preferences = getSharedPreferences("Configuracoes", MODE_PRIVATE);
@@ -801,15 +910,26 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Inicia o timer recorrente para atualizar a interface a cada segundo.
+     */
     private void startTimerUpdates() {
         stopTimerUpdates();
         timerHandler.post(timerRunnable);
     }
 
+    /**
+     * Interrompe as atualizações periódicas de tempo restante do modo manutenção.
+     */
     private void stopTimerUpdates() {
         timerHandler.removeCallbacks(timerRunnable);
     }
 
+    /**
+     * Calcula a diferença entre o timestamp de expiração e o horário atual,
+     * atualizando o TextView correspondente com a representação textual MM:SS.
+     * <p>Caso o tempo tenha esgotado, chama {@link #encerrarManutencao()}.</p>
+     */
     private void atualizarTimerVisual() {
         SharedPreferences pref = getSharedPreferences("Configuracoes", MODE_PRIVATE);
         long expTime = pref.getLong("manutencao_expiracao_timestamp", 0);
@@ -844,6 +964,9 @@ public class MainActivity extends AppCompatActivity {
         stopTimerUpdates();
     }
 
+    /**
+     * Estrutura interna para encapsular os detalhes de um aplicativo exibido na whitelist.
+     */
     private static class AppEntry {
         String name;
         String packageName;
@@ -856,6 +979,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Adapter customizado para renderizar a lista de aplicativos instalados
+     * no diálogo de whitelist.
+     */
     private class AppAdapter extends BaseAdapter {
         private Context context;
         private List<AppEntry> apps;

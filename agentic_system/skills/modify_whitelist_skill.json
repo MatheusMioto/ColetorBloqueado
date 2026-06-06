@@ -1,23 +1,90 @@
 {
   "name": "modify_whitelist_skill",
-  "description": "Adiciona ou remove aplicativos autorizados (whitelist) a executarem fora do modo manutenção. Pode ser feito modificando o código padrão ou enviando comandos de preferência do sistema via ADB.",
+  "version": "2.0.0",
+  "description": "Adiciona, remove ou lista aplicativos na whitelist (lista de apps permitidos) do ColetorBloqueado. Apps na whitelist podem ser acessados livremente pelo operador do coletor. Apps fora da whitelist são bloqueados e exigem senha de manutenção para acesso. A whitelist é persistida em SharedPreferences no arquivo 'Configuracoes.xml'.",
+  "preconditions": [
+    "Para métodos via ADB: dispositivo conectado com 'adb devices' mostrando status 'device'.",
+    "Para ações 'add' e 'remove': o 'package_name' deve ser um pacote instalado no dispositivo.",
+    "A Play Store (com.android.vending) é gerenciada separadamente via ocultação e não deve ser adicionada à whitelist diretamente.",
+    "O app ColetorBloqueado deve estar instalado para que as preferências existam no dispositivo."
+  ],
   "parameters": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": ["add", "remove", "clear", "list"],
-        "description": "Ação a ser executada na whitelist."
+        "description": "Ação a executar: 'add' libera um app, 'remove' bloqueia um app, 'clear' remove todos os apps liberados, 'list' retorna a whitelist atual."
       },
       "package_name": {
         "type": "string",
-        "description": "O nome do pacote do aplicativo a ser adicionado ou removido (ex: 'com.whatsapp'). Ignorado se a ação for 'clear' ou 'list'."
+        "description": "Nome do pacote Android do app (ex: 'com.whatsapp', 'com.android.settings'). Obrigatório para ações 'add' e 'remove'. Ignorado em 'clear' e 'list'.",
+        "examples": [
+          "com.android.settings",
+          "com.whatsapp",
+          "com.motorola.launcher3",
+          "br.com.totvs.mobilebutler"
+        ]
+      },
+      "method": {
+        "type": "string",
+        "enum": ["adb_prefs", "via_ui"],
+        "default": "adb_prefs",
+        "description": "Método de execução. 'adb_prefs': modifica as SharedPreferences diretamente via ADB (mais rápido). 'via_ui': instrui o operador a usar a interface do app (mais seguro em produção)."
+      },
+      "adb_device_serial": {
+        "type": "string",
+        "default": "",
+        "description": "Serial do dispositivo ADB alvo (opcional)."
       }
     },
     "required": ["action"]
   },
   "execution": {
     "type": "powershell_or_adb",
-    "details": "Modifica os registros de whitelist injetando dados via 'adb shell run-as com.brasil.coletorbloqueado' ou gerando alterações na classe MainActivity.java pelo Developer Agent."
+    "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/modify_whitelist.ps1",
+    "working_directory": ".",
+    "underlying_adb_commands": {
+      "list": "adb shell run-as com.brasil.coletorbloqueado cat /data/data/com.brasil.coletorbloqueado/shared_prefs/Configuracoes.xml",
+      "force_reload": "adb shell am broadcast -a com.brasil.coletorbloqueado.RELOAD_WHITELIST",
+      "note": "As ações 'add' e 'remove' modificam o XML de SharedPreferences e reiniciam o serviço para aplicar as mudanças."
+    }
+  },
+  "returns": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["SUCCESS", "FAILED_PACKAGE_NOT_FOUND", "FAILED_ADB_ERROR", "FAILED_ALREADY_IN_LIST"],
+        "description": "Status da operação."
+      },
+      "whitelist": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Lista atual de pacotes na whitelist após a operação. Retornado sempre em ação 'list' e após modificações."
+      },
+      "affected_package": {
+        "type": "string",
+        "description": "Pacote afetado pela operação de add/remove."
+      },
+      "error_message": {
+        "type": "string",
+        "description": "Mensagem de erro detalhada. Vazio em caso de sucesso."
+      }
+    }
+  },
+  "error_codes": {
+    "PACKAGE_NOT_INSTALLED": {
+      "description": "O pacote especificado não está instalado no dispositivo.",
+      "resolution": "Verifique a ortografia do pacote com: 'adb shell pm list packages | findstr <nome>'"
+    },
+    "PREFS_NOT_ACCESSIBLE": {
+      "description": "As SharedPreferences do app não são acessíveis via 'run-as' (dispositivo pode estar em modo production).",
+      "resolution": "Use o método 'via_ui' ou acesse as configurações diretamente pelo painel do app em modo manutenção."
+    },
+    "ALREADY_IN_WHITELIST": {
+      "description": "O pacote já está na whitelist (para ação 'add') ou já não está (para ação 'remove').",
+      "resolution": "Use a ação 'list' para verificar o estado atual antes de modificar."
+    }
   }
 }

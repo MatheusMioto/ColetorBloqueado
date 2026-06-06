@@ -1,16 +1,51 @@
 {
   "name": "stream_logs_skill",
-  "description": "Exibe e filtra logs em tempo real do aplicativo ColetorBloqueado diretamente via ADB Logcat para depurar comportamento e segurança.",
+  "version": "2.0.0",
+  "description": "Captura e filtra logs em tempo real do aplicativo ColetorBloqueado via ADB Logcat. Foca nas tags de segurança críticas do projeto e filtra ruído do sistema. Ideal para diagnóstico de crashes, falhas de bloqueio e comportamento inesperado de serviços.",
+  "preconditions": [
+    "Dispositivo conectado via ADB com status 'device'.",
+    "O app ColetorBloqueado deve estar instalado no dispositivo.",
+    "Recomendado: limpe o buffer de logs antes de iniciar com 'adb logcat -c' para evitar logs antigos."
+  ],
   "parameters": {
     "type": "object",
     "properties": {
       "filters": {
         "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "default": ["MainActivity:D", "MonitoramentoService:D", "MeuAdminReceiver:D", "AndroidRuntime:E", "*:S"],
-        "description": "Especificações de filtros e tags de logcat (ex: TAG:Nível)."
+        "items": { "type": "string" },
+        "default": [
+          "MainActivity:D",
+          "MonitoramentoService:D",
+          "MeuAdminReceiver:D",
+          "SetupWizardActivity:D",
+          "SettingsPasswordActivity:D",
+          "BootReceiver:D",
+          "HomeRestoreReceiver:D",
+          "AndroidRuntime:E",
+          "*:S"
+        ],
+        "description": "Lista de filtros de tag:nível para o logcat. '*:S' silencia todos os outros logs. Níveis: V(verbose), D(debug), I(info), W(warn), E(error), F(fatal), S(silent)."
+      },
+      "duration_seconds": {
+        "type": "integer",
+        "default": 60,
+        "description": "Duração máxima de captura em segundos. Use 0 para captura contínua (requer interrupção manual)."
+      },
+      "output_format": {
+        "type": "string",
+        "enum": ["brief", "threadtime", "json"],
+        "default": "brief",
+        "description": "Formato de saída do logcat. 'brief': tag/PID simples. 'threadtime': com data/hora e thread. 'json': estruturado (requer API 35+)."
+      },
+      "clear_buffer_first": {
+        "type": "boolean",
+        "default": true,
+        "description": "Se true, executa 'adb logcat -c' antes de iniciar a captura para limpar logs antigos."
+      },
+      "adb_device_serial": {
+        "type": "string",
+        "default": "",
+        "description": "Serial do dispositivo ADB alvo (opcional)."
       }
     },
     "required": []
@@ -18,6 +53,66 @@
   "execution": {
     "type": "powershell",
     "command": "powershell.exe -ExecutionPolicy Bypass -File scripts/stream_logs.ps1",
-    "working_directory": "."
+    "working_directory": ".",
+    "underlying_adb_command": "adb logcat MainActivity:D MonitoramentoService:D MeuAdminReceiver:D SetupWizardActivity:D SettingsPasswordActivity:D BootReceiver:D HomeRestoreReceiver:D AndroidRuntime:E *:S"
+  },
+  "returns": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["STREAMING", "COMPLETED", "ERROR"],
+        "description": "Estado da captura de logs."
+      },
+      "log_lines": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Array de linhas de log capturadas durante a sessão."
+      },
+      "error_summary": {
+        "type": "object",
+        "properties": {
+          "crash_count": { "type": "integer", "description": "Número de crashes (AndroidRuntime:E) detectados." },
+          "security_events": { "type": "integer", "description": "Número de tentativas de bloqueio detectadas pelo MonitoramentoService." },
+          "service_restarts": { "type": "integer", "description": "Número de reinicializações do MonitoramentoService detectadas." }
+        }
+      }
+    }
+  },
+  "error_codes": {
+    "NO_DEVICE": {
+      "description": "Nenhum dispositivo ADB conectado.",
+      "resolution": "Conecte o dispositivo via USB com Depuração USB ativa."
+    },
+    "PERMISSION_DENIED": {
+      "description": "Acesso negado ao logcat (raro em dispositivos de produção).",
+      "resolution": "Certifique-se de que a depuração USB está autorizada."
+    }
+  },
+  "known_log_patterns": {
+    "BLOQUEIO_ATIVO": {
+      "tag": "MonitoramentoService",
+      "pattern": "Bloqueio ativo: .* em foreground",
+      "severity": "INFO",
+      "meaning": "Um app bloqueado tentou ir para foreground. O serviço está interceptando corretamente."
+    },
+    "ERRO_DEVICE_OWNER": {
+      "tag": "MainActivity",
+      "pattern": "Erro ao aplicar travas do sistema",
+      "severity": "ERROR",
+      "meaning": "As políticas de Device Owner não puderam ser aplicadas. Verifique se o setup foi concluído."
+    },
+    "SERVICE_DESTROYED": {
+      "tag": "MonitoramentoService",
+      "pattern": "Serviço encerrado",
+      "severity": "WARNING",
+      "meaning": "O serviço de monitoramento foi destruído pelo sistema. Pode indicar pressão de memória (LMK). O app deve ser reiniciado."
+    },
+    "TIMER_EXPIRADO": {
+      "tag": "MonitoramentoService",
+      "pattern": "Temporizador de manutencao esgotado",
+      "severity": "INFO",
+      "meaning": "O temporizador do modo manutenção expirou e o coletor foi bloqueado automaticamente."
+    }
   }
 }
